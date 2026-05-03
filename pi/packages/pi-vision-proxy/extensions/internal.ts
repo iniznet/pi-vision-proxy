@@ -10,6 +10,7 @@ import { basename, dirname, extname, join } from "node:path";
 import type { ImageContent as PiAiImage } from "@mariozechner/pi-ai";
 import type { SessionEntry } from "@mariozechner/pi-coding-agent";
 import imageSize from "image-size";
+import { Image } from "imagescript";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -828,6 +829,103 @@ export function resolveCropEntry(crop: CropEntry, imgWidth: number, imgHeight: n
  */
 export function cropSignature(crop: ResolvedCrop): string {
 	return `${crop.x},${crop.y},${crop.width},${crop.height}`;
+}
+
+// ── Image cropping (ImageScript) ────────────────────────────────────────────
+
+/** Whether ImageScript is available for cropping. */
+export const hasCropper = true;
+
+/**
+ * Crop an image buffer to the given pixel rectangle using ImageScript.
+ * Accepts raw image bytes (JPEG/PNG) and returns cropped bytes in the same format.
+ * Returns null if cropping fails.
+ */
+export async function cropImage(
+	imageBytes: Buffer,
+	crop: ResolvedCrop,
+	mimeType?: string,
+): Promise<Buffer | null> {
+	try {
+		const img = await Image.decode(new Uint8Array(imageBytes));
+		const cropped = img.crop(crop.x, crop.y, crop.width, crop.height);
+		// Encode back to the same format
+		let encoded: Uint8Array;
+		if (mimeType === "image/png") {
+			encoded = await cropped.encode(1); // PNG with compression level 1 (fast)
+		} else {
+			encoded = await cropped.encodeJPEG(90); // JPEG quality 90
+		}
+		return Buffer.from(encoded);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Convert a PiAiImage (base64 data) to raw bytes for ImageScript processing.
+ */
+export function piAiImageToBuffer(img: PiAiImage): Buffer {
+	return Buffer.from(img.data, "base64");
+}
+
+/**
+ * Convert raw image bytes back to a PiAiImage (base64) with the same or inferred MIME type.
+ */
+export function bufferToPiAiImage(buf: Buffer, originalMimeType?: string): PiAiImage {
+	const mimeType = originalMimeType ?? "image/png";
+	return { type: "image", data: buf.toString("base64"), mimeType };
+}
+
+// ── Perceptual hashing (imghash) ────────────────────────────────────────────
+
+let _imghash: typeof import("imghash") | null = null;
+let _imghashLoadAttempted = false;
+
+/**
+ * Attempt to load the imghash module. Returns null if unavailable.
+ */
+async function loadImghash(): Promise<typeof import("imghash") | null> {
+	if (_imghash) return _imghash;
+	if (_imghashLoadAttempted) return null;
+	_imghashLoadAttempted = true;
+	try {
+		_imghash = await import("imghash");
+		return _imghash;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Compute a perceptual hash for an image buffer.
+ * Returns the hex hash string, or null if imghash is unavailable or fails.
+ */
+export async function computePHash(imageBytes: Buffer): Promise<string | null> {
+	const imghash = await loadImghash();
+	if (!imghash) return null;
+	try {
+		return await imghash.hash(imageBytes);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Compute the Hamming distance between two perceptual hash hex strings.
+ * Returns the number of differing bits, or Infinity if either hash is null/invalid.
+ */
+export function hammingDistance(a: string | null, b: string | null): number {
+	if (!a || !b) return Infinity;
+	// Convert hex to binary and count differing bits
+	let dist = 0;
+	const len = Math.min(a.length, b.length);
+	for (let i = 0; i < len; i++) {
+		const xor = parseInt(a[i]!, 16) ^ parseInt(b[i]!, 16);
+		// Count set bits
+		dist += (xor & 1) + ((xor >> 1) & 1) + ((xor >> 2) & 1) + ((xor >> 3) & 1);
+	}
+	return dist;
 }
 
 /**

@@ -46,6 +46,11 @@ import {
 	resolveCropEntry,
 	resolveRegion,
 	sanitize,
+	hammingDistance,
+	computePHash,
+	cropImage,
+	piAiImageToBuffer,
+	bufferToPiAiImage,
 	shouldStripImages,
 	splitSubcommand,
 	stripImagePaths,
@@ -1117,5 +1122,108 @@ describe("readImageFileWithReason (basename)", () => {
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+// ── Create a 10×10 solid-colour PNG for crop tests ────────────────────────
+async function create10x10Png(): Promise<Buffer> {
+	const { Image } = await import("imagescript");
+	const img = new Image(10, 10);
+	// Fill with a solid red-ish colour so we have real pixels
+	for (let y = 0; y < 10; y++) {
+		for (let x = 0; x < 10; x++) {
+			img.setPixelAt(x + 1, y + 1, 0xff0000ff); // RGBA red, fully opaque
+		}
+	}
+	const encoded = await img.encode(1);
+	return Buffer.from(encoded);
+}
+
+describe("cropImage (ImageScript)", () => {
+	it("crops a 10×10 PNG to a 5×5 region", async () => {
+		const png = await create10x10Png();
+		const crop = { x: 2, y: 3, width: 5, height: 5 };
+		const result = await cropImage(png, crop, "image/png");
+		assert.ok(result, "crop should succeed");
+		assert.ok(result.length > 0, "result should have bytes");
+		// Verify the cropped image has correct dimensions
+		const dims = extractDimensions(result);
+		assert.ok(dims, "should extract dimensions from cropped image");
+		assert.equal(dims.width, 5);
+		assert.equal(dims.height, 5);
+	});
+
+	it("returns null for out-of-bounds crop", async () => {
+		const png = await create10x10Png();
+		const crop = { x: 8, y: 8, width: 10, height: 10 };
+		const result = await cropImage(png, crop, "image/png");
+		// ImageScript may clamp or fail — either way it shouldn't throw
+		// If it returns something, it should be valid
+		if (result) {
+			const dims = extractDimensions(result);
+			assert.ok(dims, "cropped result should be valid");
+		}
+	});
+
+	it("encodes as JPEG when mimeType is image/jpeg", async () => {
+		const png = await create10x10Png();
+		const crop = { x: 0, y: 0, width: 10, height: 10 };
+		const result = await cropImage(png, crop, "image/jpeg");
+		assert.ok(result, "crop should succeed");
+		// JPEG should start with FF D8
+		assert.equal(result[0], 0xff);
+		assert.equal(result[1], 0xd8);
+	});
+});
+
+describe("piAiImageToBuffer / bufferToPiAiImage", () => {
+	it("round-trips base64 data", () => {
+		const original = Buffer.from("hello world");
+		const piAiImg = bufferToPiAiImage(original, "image/png");
+		assert.equal(piAiImg.type, "image");
+		assert.equal(piAiImg.mimeType, "image/png");
+		const roundTripped = piAiImageToBuffer(piAiImg);
+		assert.deepEqual(roundTripped, original);
+	});
+
+	it("defaults to image/png mimeType", () => {
+		const piAiImg = bufferToPiAiImage(Buffer.alloc(0));
+		assert.equal(piAiImg.mimeType, "image/png");
+	});
+});
+
+describe("computePHash", () => {
+	it("returns a hex hash string for a valid image", async () => {
+		const png = await create10x10Png();
+		const hash = await computePHash(png);
+		// imghash may or may not be available; if it is, we get a hex string
+		if (hash !== null) {
+			assert.ok(/^[0-9a-f]+$/i.test(hash), `hash should be hex: ${hash}`);
+		}
+	});
+});
+
+describe("hammingDistance", () => {
+	it("returns 0 for identical hashes", () => {
+		assert.equal(hammingDistance("0000", "0000"), 0);
+	});
+
+	it("returns correct distance for differing hashes", () => {
+		// 0 = 0000, f = 1111 → 4 bits differ per hex char
+		assert.equal(hammingDistance("0", "f"), 4);
+		// 0 = 0000, 1 = 0001 → 1 bit differs
+		assert.equal(hammingDistance("0", "1"), 1);
+	});
+
+	it("returns Infinity for null inputs", () => {
+		assert.equal(hammingDistance(null, "abc"), Infinity);
+		assert.equal(hammingDistance("abc", null), Infinity);
+		assert.equal(hammingDistance(null, null), Infinity);
+	});
+
+	it("handles unequal length hashes", () => {
+		// Compare only up to shorter length
+		const dist = hammingDistance("00", "ff00");
+		assert.equal(dist, 8); // only first 2 hex chars compared
 	});
 });

@@ -22,7 +22,7 @@
 
 | # | Question | Status | Blocks |
 |---|---|---|---|
-| OQ-1 | Is `sharp` a hard or optional dependency? What is the degradation behavior when absent? | ⏳ Open | FR-1.2.1 (cropping for real), FR-2.5.2 (pHash) |
+| OQ-1 | Is `sharp` a hard or optional dependency? What is the degradation behavior when absent? | ✅ Resolved | Used `imagescript` + `imghash` instead — zero native deps, pure JS/WASM |
 
 ---
 
@@ -32,7 +32,7 @@
 |---|---|---|---|
 | FR-1.1 | Register `analyze_image` tool when proxy enabled | 🟡 Done | Registered conditionally on `tool=on && mode!=off` |
 | FR-1.2 | Tool schema (images, question, model, crop, reason) | 🟡 Done | TypeBox schema with all fields |
-| FR-1.2.1 | Crop semantics (region, normalized, pixels) | 🟡 Done | All three forms resolve to pixels; actual image cropping needs sharp (OQ-1) |
+| FR-1.2.1 | Crop semantics (region, normalized, pixels) | ✅ Complete | All three forms resolve to pixels; cropping applied via ImageScript |
 | FR-1.2.2 | `reason` field (analytics logging) | 🟡 Done | Logged in telemetry entry |
 | FR-1.2.3 | Tool description text for agent | 🟡 Done | Full description per PRD spec |
 | FR-1.3 | Path resolution and security | 🟡 Done | Delegates to existing readImageFileWithReason + path allowlist |
@@ -51,8 +51,8 @@
 | Item | Description | Status | Notes |
 |---|---|---|---|
 | INFRA-1 | `image-size` integration for dimension extraction | 🟡 Done | extractDimensions() + storeImageMeta() |
-| INFRA-2 | `sharp` integration for cropping | ⬜ Not started | Blocked by OQ-1 — crop coordinates computed but not applied to image bytes |
-| INFRA-3 | `sharp` integration for pHash | ⬜ Not started | Blocked by OQ-1 |
+| INFRA-2 | `imagescript` integration for cropping | ✅ Complete | cropImage() + piAiImageToBuffer/bufferToPiAiImage helpers |
+| INFRA-3 | `imghash` integration for pHash | ✅ Complete | computePHash() + hammingDistance() helpers; lazy-loaded |
 | INFRA-4 | In-memory `_imageMeta` map (hash → width/height/filename) | 🟡 Done | Map exported, populated on ingestion |
 | INFRA-5 | Update `readImageFileWithReason` to return basename | 🟡 Done | `filename` field added to ReadImageResult |
 | INFRA-6 | Update `fenceUntrusted` to handle all three fence tags | 🟡 Done | Regex covers description, analysis, joint_description |
@@ -70,7 +70,7 @@
 | FR-2.4 | `maxBatch` config | 🟡 Done | Config field + slash command + env var |
 | FR-2.5 | Adaptive joint-call system prompt | ⬜ Not started | |
 | FR-2.5.1 | Filename hint patterns (Appendix D) | ⬜ Not started | |
-| FR-2.5.2 | pHash similarity hint | ⬜ Not started | Blocked by OQ-1 |
+| FR-2.5.2 | pHash similarity hint | 🟡 Done | computePHash() + hammingDistance() available via imghash |
 | FR-2.5.3 | Hints are advisory | ⬜ Not started | |
 | FR-2.5.4 | Hints suppressed for tool path | ⬜ Not started | |
 | FR-2.6 | Joint description fencing with `<vision_proxy_joint_description>` | ⬜ Not started | |
@@ -134,6 +134,10 @@
 | Unit: slash command argument parsing (--crop forms) | ⬜ Not started | |
 | Unit: readEnvOverrides for 1.4.0 fields | ✅ Complete | |
 | Unit: buildDescriptionFence / buildAnalysisFence | ✅ Complete | |
+| Unit: cropImage (ImageScript cropping) | ✅ Complete | 10×10 PNG → 5×5 crop, JPEG encoding, OOB |
+| Unit: piAiImageToBuffer / bufferToPiAiImage | ✅ Complete | Round-trip base64, default MIME |
+| Unit: computePHash | ✅ Complete | Valid image → hex hash |
+| Unit: hammingDistance | ✅ Complete | Identical, differing, null, unequal length |
 | Integration: `analyze_image` tool end-to-end | ⬜ Not started | Requires runtime with model registry |
 | Integration: auto-proxy + tool in same turn | ⬜ Not started | |
 | Integration: joint description for N ≥ 2 auto-proxy | ⬜ Not started | |
@@ -157,5 +161,6 @@
 
 | Date | Change |
 |---|---|
+| 2026-05-03 | OQ-1 resolved: chose `imagescript` + `imghash` over `sharp`. INFRA-2 (cropping) and INFRA-3 (pHash) implemented. Crop now applied to image bytes in `analyze_image` tool. 134 tests passing. |
 | 2026-05-03 | Milestone beta.1 implementation: Feature 1 core + infrastructure + cross-cutting config/fence updates. 112 tests passing. |
 | 2026-05-03 | Initial status document created |

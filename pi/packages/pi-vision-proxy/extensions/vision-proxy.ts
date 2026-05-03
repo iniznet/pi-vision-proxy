@@ -48,7 +48,9 @@ import {
 	buildDescriptionFence,
 	buildGroundingInstruction,
 	buildToolCacheKey,
+	bufferToPiAiImage,
 	type ConsentEntry,
+	cropImage,
 	CUSTOM_TYPE_CONFIG,
 	CUSTOM_TYPE_CONSENT,
 	CUSTOM_TYPE_DESCRIPTION,
@@ -66,6 +68,7 @@ import {
 	hashImageData,
 	type ImageMeta,
 	type LegacyImage,
+	piAiImageToBuffer,
 	LRUCache,
 	modeLabel,
 	modelLabel,
@@ -706,21 +709,25 @@ async function handleAnalyzeImage(
 			return "Error: vision model returned an empty response.";
 		}
 
-	// NOTE: Crop coordinates are resolved but NOT yet applied to image bytes.
-	// The full uncropped image is sent to the vision model. Until `sharp` is integrated
-	// for local cropping, we do not include crop attributes in the fence to avoid
-	// misleading the agent with inaccurate width/height/crop_origin values.
-	const cropRequested = imagePayloads.some((p) => p.crop);
-	if (cropRequested) {
-		ctx.ui.notify(
-			"[vision-proxy] Crop requested but not yet applied — full image will be sent. " +
-				"Cropping will be available once the `sharp` package is integrated.",
-			"warning",
-		);
+		// Apply crops to image bytes where requested
+	let anyCropApplied = false;
+	for (const p of imagePayloads) {
+		if (p.crop) {
+			const buf = piAiImageToBuffer(p.image);
+			const cropped = await cropImage(buf, p.crop, p.image.mimeType);
+			if (cropped) {
+				p.image = bufferToPiAiImage(cropped, p.image.mimeType);
+				anyCropApplied = true;
+			} else {
+				ctx.ui.notify(
+					`[vision-proxy] Crop failed for an image — sending full image instead.`,
+					"warning",
+				);
+				p.crop = undefined; // don’t report crop in fence
+			}
+		}
 	}
-
 	// Build result fence(s)
-	// When crop was requested but not applied, build fence WITHOUT crop metadata
 	let result: string;
 	if (imagePayloads.length === 1) {
 		const p = imagePayloads[0];
@@ -728,7 +735,7 @@ async function handleAnalyzeImage(
 			p.hash,
 			text,
 			p.meta,
-			undefined, // crop not applied — omit crop metadata
+			p.crop,
 			groundingFormat !== "none" ? groundingFormat : undefined,
 		);
 	} else {
@@ -748,7 +755,7 @@ async function handleAnalyzeImage(
 		pi.appendEntry(CUSTOM_TYPE_TOOL_CALL, {
 			images: orderedHashes,
 			cropForm: crops?.length ? (crops[0].region ? "region" : crops[0].normalized ? "normalized" : "pixels") : "none",
-			cropApplied: false, // cropping not yet implemented
+			cropApplied: anyCropApplied,
 			question: question.slice(0, 200),
 			reason: reason ? reason.slice(0, 200) : undefined,
 			model: `${visionProvider}/${visionModelId}`,
