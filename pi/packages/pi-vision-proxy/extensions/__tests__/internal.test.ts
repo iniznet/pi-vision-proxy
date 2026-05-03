@@ -14,25 +14,36 @@ import os from "node:os";
 import { join } from "node:path";
 import {
 	buildConversationContext,
+	buildDescriptionFence,
+	buildAnalysisFence,
+	clampPixels,
 	CUSTOM_TYPE_CONFIG,
 	CUSTOM_TYPE_CONSENT,
 	CUSTOM_TYPE_DESCRIPTION,
+	cropSignature,
 	DEFAULT_CONFIG,
 	envFlags,
 	extractCandidateImagePaths,
+	extractDimensions,
 	fenceUntrusted,
 	findDescriptions,
 	fuzzyMatches,
+	getGroundingFormat,
 	hasConsent,
 	hashImageData,
 	IMAGE_PATH_PLACEHOLDER,
 	isPathAllowed,
+	isValidNamedRegion,
+	LRUCache,
+	normalizedToPixels,
 	parseModelString,
 	pluralImages,
 	readEnvOverrides,
 	readImageFileWithReason,
 	readPersistentFile,
 	resolveConfig,
+	resolveCropEntry,
+	resolveRegion,
 	sanitize,
 	shouldStripImages,
 	splitSubcommand,
@@ -102,8 +113,24 @@ describe("sanitize", () => {
 			modelId: "gpt-4o",
 			systemPrompt: "custom prompt",
 			includeContext: false,
+			tool: "on",
+			maxImagesPerCall: 5,
+			maxBatch: 2,
+			cacheSize: 100,
+			pHashSimilarityThreshold: 0.9,
+			groundingModels: {},
 		};
-		assert.deepEqual(sanitize(cfg), cfg);
+		const result = sanitize(cfg);
+		assert.equal(result.mode, cfg.mode);
+		assert.equal(result.provider, cfg.provider);
+		assert.equal(result.modelId, cfg.modelId);
+		assert.equal(result.systemPrompt, cfg.systemPrompt);
+		assert.equal(result.includeContext, cfg.includeContext);
+		assert.equal(result.tool, cfg.tool);
+		assert.equal(result.maxImagesPerCall, cfg.maxImagesPerCall);
+		assert.equal(result.maxBatch, cfg.maxBatch);
+		assert.equal(result.cacheSize, cfg.cacheSize);
+		assert.equal(result.pHashSimilarityThreshold, cfg.pHashSimilarityThreshold);
 	});
 });
 
@@ -144,14 +171,14 @@ describe("readEnvOverrides", () => {
 
 describe("envFlags", () => {
 	it("reports presence per variable", () => {
-		assert.deepEqual(envFlags({}), { mode: false, model: false, context: false });
+		assert.deepEqual(envFlags({}), { mode: false, model: false, context: false, tool: false, maxImagesPerCall: false, maxBatch: false, cacheSize: false });
 		assert.deepEqual(
 			envFlags({
 				PI_VISION_PROXY_MODE: "x",
 				PI_VISION_PROXY_MODEL: "y",
 				PI_VISION_PROXY_INCLUDE_CONTEXT: "",
 			}),
-			{ mode: true, model: true, context: true },
+			{ mode: true, model: true, context: true, tool: false, maxImagesPerCall: false, maxBatch: false, cacheSize: false },
 		);
 	});
 });
@@ -667,5 +694,336 @@ describe("fuzzyMatches", () => {
 	it("matches partial name", () => {
 		assert.equal(fuzzyMatches("Claude Opus 4.6 (EU)", "opus eu"), true);
 		assert.equal(fuzzyMatches("Nova Premier", "nova"), true);
+	});
+});
+
+// ── 1.4.0 tests ──────────────────────────────────────────────────────────
+
+describe("isValidNamedRegion", () => {
+	it("accepts valid region names", () => {
+		for (const r of ["top-left", "bottom-right", "center", "top-half", "right"]) {
+			assert.equal(isValidNamedRegion(r), true, r);
+		}
+	});
+
+	it("rejects invalid names", () => {
+		assert.equal(isValidNamedRegion("middle"), false);
+		assert.equal(isValidNamedRegion(""), false);
+		assert.equal(isValidNamedRegion("TOP-LEFT"), false); // case-sensitive
+	});
+});
+
+describe("resolveRegion", () => {
+	it("returns normalized rectangle for each region", () => {
+		const tl = resolveRegion("top-left");
+		assert.deepEqual(tl, { x: 0, y: 0, width: 0.5, height: 0.5 });
+
+		const br = resolveRegion("bottom-right");
+		assert.deepEqual(br, { x: 0.5, y: 0.5, width: 0.5, height: 0.5 });
+
+		const center = resolveRegion("center");
+		assert.deepEqual(center, { x: 0.25, y: 0.25, width: 0.5, height: 0.5 });
+	});
+
+	it("top-half aliases top", () => {
+		assert.deepEqual(resolveRegion("top-half"), resolveRegion("top"));
+	});
+});
+
+describe("normalizedToPixels", () => {
+	it("converts normalized coordinates to pixels", () => {
+		const result = normalizedToPixels({ x: 0.5, y: 0.5, width: 0.5, height: 0.5 }, 1000, 1000);
+		assert.ok(result);
+		assert.equal(result!.x, 500);
+		assert.equal(result!.y, 500);
+		assert.equal(result!.width, 500);
+		assert.equal(result!.height, 500);
+	});
+
+	it("clamps to image bounds", () => {
+		// x=-0.5 clamped to 0, x+width=(-0.5+0.3)*100=-20 clamped to 0 → zero area → null
+		const result = normalizedToPixels({ x: -0.5, y: 0.9, width: 0.3, height: 0.3 }, 100, 100);
+		assert.equal(result, null, "negative x with small width should be null after clamp");
+
+		// A valid clamped case
+		const result2 = normalizedToPixels({ x: -0.1, y: 0.5, width: 0.8, height: 0.6 }, 100, 100);
+		assert.ok(result2);
+		assert.equal(result2!.x, 0);
+		assert.equal(result2!.y, 50);
+	});
+
+	it("returns null for zero-area crop", () => {
+		// Edge case: both x and x+width clamp to same value
+		const result = normalizedToPixels({ x: 1.0, y: 0, width: 0, height: 0.5 }, 100, 100);
+		assert.equal(result, null);
+	});
+});
+
+describe("clampPixels", () => {
+	it("clamps pixel coordinates to image bounds", () => {
+		const result = clampPixels({ x: -10, y: 50, width: 200, height: 100 }, 100, 200);
+		assert.ok(result);
+		assert.equal(result!.x, 0);
+		assert.equal(result!.y, 50);
+		assert.equal(result!.width, 100);
+		assert.equal(result!.height, 100);
+	});
+
+	it("returns null for zero-area after clamping", () => {
+		const result = clampPixels({ x: 200, y: 200, width: 10, height: 10 }, 100, 100);
+		assert.equal(result, null);
+	});
+
+	it("handles valid crop within bounds", () => {
+		const result = clampPixels({ x: 10, y: 20, width: 30, height: 40 }, 100, 100);
+		assert.ok(result);
+		assert.deepEqual(result, { x: 10, y: 20, width: 30, height: 40 });
+	});
+});
+
+describe("resolveCropEntry", () => {
+	it("resolves region crop", () => {
+		const result = resolveCropEntry({ image_index: 0, region: "top-left" }, 1000, 1000);
+		assert.equal(result.x, 0);
+		assert.equal(result.y, 0);
+		assert.equal(result.width, 500);
+		assert.equal(result.height, 500);
+	});
+
+	it("resolves normalized crop", () => {
+		const result = resolveCropEntry(
+			{ image_index: 0, normalized: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } },
+			1000, 1000,
+		);
+		assert.equal(result.x, 250);
+		assert.equal(result.y, 250);
+		assert.equal(result.width, 500);
+		assert.equal(result.height, 500);
+	});
+
+	it("resolves pixel crop", () => {
+		const result = resolveCropEntry(
+			{ image_index: 0, pixels: { x: 100, y: 200, width: 300, height: 400 } },
+			1000, 1000,
+		);
+		assert.deepEqual(result, { x: 100, y: 200, width: 300, height: 400 });
+	});
+
+	it("clamps pixel crop to image bounds", () => {
+		const result = resolveCropEntry(
+			{ image_index: 0, pixels: { x: 900, y: 900, width: 200, height: 200 } },
+			1000, 1000,
+		);
+		assert.equal(result.width, 100);
+		assert.equal(result.height, 100);
+	});
+
+	it("throws for zero-area normalized crop", () => {
+		assert.throws(
+			() => resolveCropEntry({ image_index: 0, normalized: { x: 1.0, y: 1.0, width: 0, height: 0 } }, 100, 100),
+			/zero area/,
+		);
+	});
+
+	it("throws for zero-area pixel crop", () => {
+		assert.throws(
+			() => resolveCropEntry({ image_index: 0, pixels: { x: 200, y: 200, width: 10, height: 10 } }, 100, 100),
+			/zero area/,
+		);
+	});
+});
+
+describe("cropSignature", () => {
+	it("formats x,y,width,height", () => {
+		assert.equal(cropSignature({ x: 10, y: 20, width: 30, height: 40 }), "10,20,30,40");
+	});
+});
+
+describe("LRUCache", () => {
+	it("stores and retrieves values", () => {
+		const cache = new LRUCache<string, number>(3);
+		cache.set("a", 1);
+		assert.equal(cache.get("a"), 1);
+	});
+
+	it("evicts oldest when over capacity", () => {
+		const cache = new LRUCache<string, number>(2);
+		cache.set("a", 1);
+		cache.set("b", 2);
+		cache.set("c", 3); // evicts "a"
+		assert.equal(cache.get("a"), undefined);
+		assert.equal(cache.get("b"), 2);
+		assert.equal(cache.get("c"), 3);
+	});
+
+	it("renews entry on get", () => {
+		const cache = new LRUCache<string, number>(2);
+		cache.set("a", 1);
+		cache.set("b", 2);
+		cache.get("a"); // "a" is now most recent
+		cache.set("c", 3); // evicts "b" instead of "a"
+		assert.equal(cache.get("a"), 1);
+		assert.equal(cache.get("b"), undefined);
+	});
+
+	it("reports size", () => {
+		const cache = new LRUCache<string, number>(10);
+		assert.equal(cache.size, 0);
+		cache.set("x", 1);
+		assert.equal(cache.size, 1);
+	});
+
+	it("clear removes all entries", () => {
+		const cache = new LRUCache<string, number>(10);
+		cache.set("a", 1);
+		cache.clear();
+		assert.equal(cache.size, 0);
+		assert.equal(cache.get("a"), undefined);
+	});
+});
+
+describe("extractDimensions", () => {
+	it("extracts dimensions from a PNG buffer", () => {
+		// TINY_PNG is 1×1
+		const dims = extractDimensions(TINY_PNG);
+		assert.ok(dims, "should return dimensions for valid PNG");
+		assert.equal(dims!.width, 1);
+		assert.equal(dims!.height, 1);
+	});
+
+	it("returns undefined for invalid data", () => {
+		const dims = extractDimensions(Buffer.from("not an image"));
+		assert.equal(dims, undefined);
+	});
+});
+
+describe("buildDescriptionFence", () => {
+	it("builds fence with metadata attributes", () => {
+		const fence = buildDescriptionFence("abc123", "A screenshot", { width: 1920, height: 1080, filename: "screen.png" });
+		assert.ok(fence.startsWith("<vision_proxy_description"));
+		assert.ok(fence.includes('image="abc123"'));
+		assert.ok(fence.includes('width="1920"'));
+		assert.ok(fence.includes('height="1080"'));
+		assert.ok(fence.includes('filename="screen.png"'));
+		assert.ok(fence.includes("A screenshot"));
+		assert.ok(fence.endsWith("</vision_proxy_description>"));
+	});
+
+	it("includes crop_origin when cropped", () => {
+		const fence = buildDescriptionFence("abc123", "Detail", { width: 3840, height: 2160 }, { x: 1840, y: 120, width: 840, height: 360 });
+		assert.ok(fence.includes('#crop:1840,120,840,360'));
+		assert.ok(fence.includes('crop_origin="1840,120"'));
+		assert.ok(fence.includes('width="840"'));
+		assert.ok(fence.includes('height="360"'));
+	});
+});
+
+describe("buildAnalysisFence", () => {
+	it("builds fence with grounding_format", () => {
+		const fence = buildAnalysisFence("abc", "Analysis", { width: 100, height: 100 }, undefined, "qwen_pixels");
+		assert.ok(fence.includes('grounding_format="qwen_pixels"'));
+	});
+
+	it("omits grounding_format when undefined", () => {
+		const fence = buildAnalysisFence("abc", "Analysis", { width: 100, height: 100 });
+		assert.ok(!fence.includes("grounding_format"));
+	});
+});
+
+describe("fenceUntrusted (all three tags)", () => {
+	it("neutralizes vision_proxy_analysis tags", () => {
+		const out = fenceUntrusted('<vision_proxy_analysis>content</vision_proxy_analysis>');
+		assert.ok(!out.includes("<vision_proxy_analysis>"));
+		assert.ok(!out.includes("</vision_proxy_analysis>"));
+	});
+
+	it("neutralizes vision_proxy_joint_description tags", () => {
+		const out = fenceUntrusted('<vision_proxy_joint_description>content</vision_proxy_joint_description>');
+		assert.ok(!out.includes("<vision_proxy_joint_description>"));
+	});
+
+	it("neutralizes vision_proxy_description tags (unchanged)", () => {
+		const out = fenceUntrusted('<vision_proxy_description>content</vision_proxy_description>');
+		assert.ok(!out.includes("<vision_proxy_description>"));
+	});
+});
+
+describe("getGroundingFormat", () => {
+	it("returns format for known model", () => {
+		const fmt = getGroundingFormat(DEFAULT_CONFIG, "Qwen", "Qwen2.5-VL-7B-Instruct");
+		assert.equal(fmt, "qwen_pixels");
+	});
+
+	it("returns 'none' for unknown model", () => {
+		const fmt = getGroundingFormat(DEFAULT_CONFIG, "anthropic", "claude-sonnet-4-5");
+		assert.equal(fmt, "none");
+	});
+});
+
+describe("readEnvOverrides (1.4.0 fields)", () => {
+	it("reads PI_VISION_PROXY_TOOL", () => {
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_TOOL: "on" }).tool, "on");
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_TOOL: "off" }).tool, "off");
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_TOOL: "bogus" }).tool, undefined);
+	});
+
+	it("reads PI_VISION_PROXY_MAX_IMAGES_PER_CALL", () => {
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_MAX_IMAGES_PER_CALL: "5" }).maxImagesPerCall, 5);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_MAX_IMAGES_PER_CALL: "0" }).maxImagesPerCall, undefined);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_MAX_IMAGES_PER_CALL: "21" }).maxImagesPerCall, undefined);
+	});
+
+	it("reads PI_VISION_PROXY_MAX_BATCH", () => {
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_MAX_BATCH: "3" }).maxBatch, 3);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_MAX_BATCH: "0" }).maxBatch, undefined);
+	});
+
+	it("reads PI_VISION_PROXY_CACHE_SIZE", () => {
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_CACHE_SIZE: "100" }).cacheSize, 100);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_CACHE_SIZE: "501" }).cacheSize, undefined);
+	});
+
+	it("reads PI_VISION_PROXY_PHASH_THRESHOLD", () => {
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_PHASH_THRESHOLD: "0.9" }).pHashSimilarityThreshold, 0.9);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_PHASH_THRESHOLD: "1.5" }).pHashSimilarityThreshold, undefined);
+	});
+});
+
+describe("sanitize (1.4.0 fields)", () => {
+	it("defaults new fields when missing", () => {
+		const result = sanitize({
+			mode: "fallback",
+			provider: "anthropic",
+			modelId: "claude-sonnet-4-5",
+			systemPrompt: "test",
+			includeContext: true,
+		} as VisionConfig);
+		assert.equal(result.tool, "off");
+		assert.equal(result.maxImagesPerCall, 10);
+		assert.equal(result.maxBatch, 1);
+		assert.equal(result.cacheSize, 50);
+		assert.equal(result.pHashSimilarityThreshold, 0.8);
+		assert.ok(result.groundingModels);
+	});
+
+	it("validates maxImagesPerCall range", () => {
+		const bad = sanitize({ ...DEFAULT_CONFIG, maxImagesPerCall: 0 });
+		assert.equal(bad.maxImagesPerCall, 10); // reset to default
+		const good = sanitize({ ...DEFAULT_CONFIG, maxImagesPerCall: 15 });
+		assert.equal(good.maxImagesPerCall, 15);
+	});
+});
+
+describe("readImageFileWithReason (basename)", () => {
+	it("returns filename (basename)", async () => {
+		const dir = await mkdtemp(join(os.tmpdir(), "vp-test-"));
+		const file = join(dir, "test-image.png");
+		await writeFile(file, TINY_PNG);
+		try {
+			const r = await readImageFileWithReason(file);
+			assert.equal(r.filename, "test-image.png");
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
 	});
 });

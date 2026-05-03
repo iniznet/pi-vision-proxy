@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.0-beta.1] - 2026-05-03
+
+### Added
+
+- **`analyze_image` tool** — agent-facing tool for targeted re-querying of images with multi-form crop support (FR-1.x). Disabled by default during beta; enable with `/vision-proxy tool on`.
+- **Three crop forms**: `region` (named areas like `top-right`, `center`), `normalized` (0.0–1.0 fractional coordinates), and `pixels` (absolute pixel coordinates). All resolve to pixel rectangles with clamping and zero-area validation.
+- **Image dimension extraction** via `image-size` package. Dimensions and filenames stored in an in-memory `_imageMeta` map populated on first image ingestion.
+- **Enhanced fence tags**: `<vision_proxy_description>` now carries `image`, `width`, `height`, `filename`, and `crop_origin` attributes. New `<vision_proxy_analysis>` fence for tool results with optional `grounding_format` attribute.
+- **LRU result cache** for `analyze_image` calls, keyed by (image hashes, crop signature, question hash, model).
+- **Grounding format registry** with curated Tier 1 defaults (Qwen, Molmo, DeepSeek, InternVL, Gemini). Grounding instructions appended to system prompt per model's native format.
+- **New configuration**: `/vision-proxy tool on|off`, `max-images-per-call <n>`, `max-batch <n>`, `cache-size <n>`.
+- **New env vars**: `PI_VISION_PROXY_TOOL`, `PI_VISION_PROXY_MAX_IMAGES_PER_CALL`, `PI_VISION_PROXY_MAX_BATCH`, `PI_VISION_PROXY_CACHE_SIZE`, `PI_VISION_PROXY_PHASH_THRESHOLD`.
+- **Security**: `fenceUntrusted` now neutralizes all three fence tag types (`description`, `analysis`, `joint_description`).
+- **`readImageFileWithReason`** now returns the file's basename in the `filename` field.
+- **Telemetry**: `vision_proxy.tool_call` session entries with crop form, latency, cache hit status.
+- 112 unit tests covering crop resolution, LRU cache, dimension extraction, fence building, grounding lookups, config backwards compatibility, and all new env var parsing.
+
+### Changed
+
+- `VisionConfig` extended with `tool`, `maxImagesPerCall`, `maxBatch`, `cacheSize`, `pHashSimilarityThreshold`, `groundingModels` fields. Backwards compatible — 1.3.0 config files load unchanged with sensible defaults.
+- Version bumped to `1.4.0-beta.1`.
+- Added `image-size` as a runtime dependency.
+
 ## [1.3.0] - 2026-05-01
 
 ### Added
