@@ -1511,3 +1511,54 @@ describe("generateFilenameHints", () => {
 		assert.deepEqual(generateFilenameHints(["before.png"]), []);
 	});
 });
+
+import {
+	isGroundingExcluded,
+	parseGroundingFormat,
+	VALID_GROUNDING_FORMATS,
+} from "../internal.ts";
+
+describe("isGroundingExcluded", () => {
+	it("excludes claude models", () => {
+		assert.equal(isGroundingExcluded("anthropic/claude-sonnet-4-5"), true);
+	});
+
+	it("excludes gpt-4o", () => {
+		assert.equal(isGroundingExcluded("openai/gpt-4o"), true);
+	});
+
+	it("excludes llama vision", () => {
+		assert.equal(isGroundingExcluded("meta/llama-3.2-11b-vision"), true);
+	});
+
+	it("allows Qwen models", () => {
+		assert.equal(isGroundingExcluded("Qwen/Qwen2.5-VL-7B-Instruct"), false);
+	});
+
+	it("allows unknown models", () => {
+		assert.equal(isGroundingExcluded("some/vendor-model"), false);
+	});
+});
+
+describe("parseGroundingFormat", () => {
+	it("parses valid formats", () => {
+		assert.equal(parseGroundingFormat("qwen_pixels"), "qwen_pixels");
+		assert.equal(parseGroundingFormat("molmo_points"), "molmo_points");
+		assert.equal(parseGroundingFormat("deepseek_bbox"), "deepseek_bbox");
+		assert.equal(parseGroundingFormat("internvl_pixels"), "internvl_pixels");
+		assert.equal(parseGroundingFormat("gemini_normalized_1000"), "gemini_normalized_1000");
+	});
+
+	it("returns null for invalid format", () => {
+		assert.equal(parseGroundingFormat("invalid"), null);
+		assert.equal(parseGroundingFormat("none"), null);
+	});
+});
+
+describe("VALID_GROUNDING_FORMATS", () => {
+	it("contains expected formats", () => {
+		assert.ok(VALID_GROUNDING_FORMATS.includes("qwen_pixels"));
+		assert.ok(VALID_GROUNDING_FORMATS.includes("molmo_points"));
+		assert.equal(VALID_GROUNDING_FORMATS.length, 5);
+	});
+});

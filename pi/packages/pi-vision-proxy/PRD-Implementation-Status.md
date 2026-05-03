@@ -93,7 +93,7 @@
 |---|---|---|---|
 | FR-4.1 | `supportsGrounding` per-model flag | 🟡 Done | Via groundingModels config map |
 | FR-4.1.1 | Curated Tier 1 default list | 🟡 Done | Shipped in DEFAULT_CONFIG |
-| FR-4.1.2 | Grounding-models slash commands (add/remove/list/reset) | ⬜ Not started | |
+| FR-4.1.2 | Grounding-models slash commands (add/remove/list/reset) | ✅ Complete | With excluded-model confirmation prompt, --format flag, default qwen_pixels | |
 | FR-4.2 | Native-format grounding system prompt injection | 🟡 Done | buildGroundingInstruction() for all formats |
 | FR-4.3 | No grounding instruction when `supportsGrounding: false` | 🟡 Done | Returns empty string |
 | FR-4.4 | Proxy does not parse/rewrite returned coordinates | 🟡 Done | Pass-through |
@@ -152,7 +152,7 @@
 | 1.4.0-beta.1 | Feature 1 (`tool=off` default), crop forms, dimensions in fence | 🟡 Done, needs review |
 | 1.4.0-beta.2 | Feature 3 (slash commands with crop syntax) | ✅ Complete |
 | 1.4.0-beta.3 | Feature 2 (`maxBatch=1` default), adaptive prompt, hints | ✅ Complete |
-| 1.4.0-beta.4 | Feature 4 (grounding registry, Tier 1 list) | ⬜ Not started |
+| 1.4.0-beta.4 | Feature 4 (grounding registry, Tier 1 list) | ✅ Complete |
 | 1.4.0 | Flip `tool=on`, `maxBatch=4` | ⬜ Not started |
 
 ---
@@ -161,6 +161,7 @@
 
 | Date | Change |
 |---|---|
+| 2026-05-03 | Milestone beta.4: Feature 4 grounding-models slash commands (add/remove/list/reset), excluded-model warnings, parseGroundingFormat validator. 180 tests passing. |
 | 2026-05-03 | Milestone beta.3: Feature 2 (multi-image batched comparison). Auto-proxy joint descriptions for N≥2 images, adaptive joint prompt with comparison structure, filename hint patterns (Appendix D), pHash infrastructure, buildJointDescriptionFence. 172 tests passing. |
 | 2026-05-03 | Milestone beta.2: Feature 3 (`/vision-proxy describe` + `redescribe`) fully implemented. parseDescribeArgs with all three crop forms, --question/--crop/--model/--save flags, consent checks, [Vision Proxy] TUI prefix, vision_proxy.command telemetry. 152 tests passing. |
 | 2026-05-03 | OQ-1 resolved: chose `imagescript` + `imghash` over `sharp`. INFRA-2 (cropping) and INFRA-3 (pHash) implemented. Crop now applied to image bytes in `analyze_image` tool. 134 tests passing. |

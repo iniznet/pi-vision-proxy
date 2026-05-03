@@ -70,12 +70,15 @@ import {
 	fuzzyMatches,
 	generateFilenameHints,
 	getGroundingFormat,
+	type GroundingFormat,
+	isGroundingExcluded,
 	hasConsent,
 	hashImageData,
 	hammingDistance,
 	type ImageMeta,
 	type LegacyImage,
 	parseDescribeArgs,
+	parseGroundingFormat,
 	piAiImageToBuffer,
 	LRUCache,
 	modeLabel,
@@ -94,6 +97,7 @@ import {
 	stripImagePaths,
 	toPiAiImage,
 	type VisionConfig,
+	VALID_GROUNDING_FORMATS,
 	writePersistentFile,
 	_imageMeta,
 	storeImageMeta,
@@ -1295,6 +1299,115 @@ export default function (pi: ExtensionAPI) {
 				}
 				writePersisted({ ...persisted, cacheSize: n });
 				ctx.ui.notify(`[vision-proxy] Cache size: ${n}`, "info");
+				return;
+			}
+
+			// ── grounding-models add/remove/list/reset ─────────
+			if (sub === "grounding-models") {
+				const { sub: gmSub, value: gmValue } = splitSubcommand(value);
+
+				// list
+				if (gmSub === "list") {
+					const entries = Object.entries(effective.groundingModels);
+					if (entries.length === 0) {
+						ctx.ui.notify("[vision-proxy] No grounding models configured.", "info");
+					} else {
+						const lines = entries.map(([k, v]) => `  ${k} → ${v.format}`).join("\n");
+						ctx.ui.notify(`[vision-proxy] Grounding models:\n${lines}`, "info");
+					}
+					return;
+				}
+
+				// reset
+				if (gmSub === "reset") {
+					writePersisted({ ...persisted, groundingModels: { ...DEFAULT_CONFIG.groundingModels } });
+					ctx.ui.notify("[vision-proxy] Grounding models reset to defaults.", "info");
+					return;
+				}
+
+				// add <provider/model-id> [--format <fmt>]
+				if (gmSub === "add") {
+					if (!gmValue) {
+						ctx.ui.notify("Usage: /vision-proxy grounding-models add <provider/model-id> [--format <fmt>]", "warning");
+						return;
+					}
+					// Parse --format from gmValue
+					const gmTokens = gmValue.split(/\s+/);
+					const modelKey = gmTokens[0]!;
+					let format: GroundingFormat | undefined;
+					const fmtIdx = gmTokens.indexOf("--format");
+					if (fmtIdx >= 0 && gmTokens[fmtIdx + 1]) {
+						const parsed = parseGroundingFormat(gmTokens[fmtIdx + 1]!);
+						if (!parsed) {
+							ctx.ui.notify(
+								`[vision-proxy] Invalid format "${gmTokens[fmtIdx + 1]}". Valid: ${VALID_GROUNDING_FORMATS.join(", ")}`,
+								"warning",
+							);
+							return;
+						}
+						format = parsed;
+					} else {
+						format = "qwen_pixels"; // default
+					}
+
+					// Warn about excluded models
+					if (isGroundingExcluded(modelKey)) {
+						if (ctx.hasUI) {
+							const confirm = await ctx.ui.select(
+								`Warning: ${modelKey} is not designed for grounding output. Coordinates may be unreliable. Continue?`,
+								["Yes, add anyway", "Cancel"],
+							);
+							if (confirm !== "Yes, add anyway") {
+								ctx.ui.notify("[vision-proxy] Cancelled.", "info");
+								return;
+							}
+						} else {
+							ctx.ui.notify(
+								`[vision-proxy] Warning: ${modelKey} is not designed for grounding. Adding with format ${format}.`,
+								"warning",
+							);
+						}
+					} else if (!fmtIdx || fmtIdx < 0) {
+						// Default format used — mention it
+						ctx.ui.notify(
+							`[vision-proxy] Note: defaulting to qwen_pixels format. Use --format to specify.`,
+							"info",
+						);
+					}
+
+					const updated = { ...persisted.groundingModels, [modelKey]: { format } };
+					writePersisted({ ...persisted, groundingModels: updated });
+					ctx.ui.notify(`[vision-proxy] Added ${modelKey} with format ${format}.`, "info");
+					return;
+				}
+
+				// remove <provider/model-id>
+				if (gmSub === "remove") {
+					if (!gmValue) {
+						ctx.ui.notify("Usage: /vision-proxy grounding-models remove <provider/model-id>", "warning");
+						return;
+					}
+					const modelKey = gmValue.split(/\s+/)[0]!;
+					if (!persisted.groundingModels[modelKey]) {
+						ctx.ui.notify(`[vision-proxy] ${modelKey} is not in the grounding models list.`, "warning");
+						return;
+					}
+					const updated = { ...persisted.groundingModels };
+					delete updated[modelKey];
+					writePersisted({ ...persisted, groundingModels: updated });
+					ctx.ui.notify(`[vision-proxy] Removed ${modelKey} from grounding models.`, "info");
+					return;
+				}
+
+				// Fallthrough — show usage
+				ctx.ui.notify(
+					"Usage: /vision-proxy grounding-models <list|reset|add|remove>\n" +
+					"  list                              — show configured models\n" +
+					"  reset                             — restore defaults\n" +
+					"  add <provider/id> [--format <f>]  — add a model\n" +
+					"  remove <provider/id>              — remove a model",
+					"info",
+				);
 				return;
 			}
 

@@ -163,6 +163,35 @@ export const CUSTOM_TYPE_JOINT = "vision-proxy-joint-description";
 export const CUSTOM_TYPE_COMMAND = "vision-proxy-command";
 export const CUSTOM_TYPE_SKIP = "vision-proxy-skip";
 
+/** Models explicitly excluded from grounding (PRD FR-4.1.1). */
+export const GROUNDING_EXCLUDED_MODELS = [
+	"anthropic/claude",
+	"openai/gpt-4o",
+	"openai/gpt-5",
+	"meta/llama",
+];
+
+/** Valid grounding format identifiers. */
+export const VALID_GROUNDING_FORMATS: GroundingFormat[] = [
+	"qwen_pixels",
+	"molmo_points",
+	"deepseek_bbox",
+	"internvl_pixels",
+	"gemini_normalized_1000",
+];
+
+/** Check if a model key matches any excluded prefix. */
+export function isGroundingExcluded(providerModel: string): boolean {
+	const lower = providerModel.toLowerCase();
+	return GROUNDING_EXCLUDED_MODELS.some((ex) => lower.startsWith(ex));
+}
+
+/** Parse and validate a grounding format string. */
+export function parseGroundingFormat(raw: string): GroundingFormat | null {
+	if ((VALID_GROUNDING_FORMATS as readonly string[]).includes(raw)) return raw as GroundingFormat;
+	return null;
+}
+
 // ── Slash command: describe argument parsing ────────────────────────────
 
 export interface DescribeArgs {
