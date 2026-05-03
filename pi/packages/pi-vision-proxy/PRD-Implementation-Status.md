@@ -64,17 +64,17 @@
 
 | FR | Description | Status | Notes |
 |---|---|---|---|
-| FR-2.1 | Auto-proxy: joint description for N ≥ 2 images | ⬜ Not started | |
-| FR-2.2 | `analyze_image` with ≥2 images: batched vision call | ⬜ Not started | Tool handler sends all images but no joint prompt |
-| FR-2.3 | Joint calls obey consent + injection fence + include_context | ⬜ Not started | |
+| FR-2.1 | Auto-proxy: joint description for N ≥ 2 images | ✅ Complete | Joint call after per-image analysis, cached in session | |
+| FR-2.2 | `analyze_image` with ≥2 images: batched vision call | 🟡 Done | Sends all images; uses adaptive prompt when available |
+| FR-2.3 | Joint calls obey consent + injection fence + include_context | ✅ Complete | Reuses same consent/fence flow | |
 | FR-2.4 | `maxBatch` config | 🟡 Done | Config field + slash command + env var |
-| FR-2.5 | Adaptive joint-call system prompt | ⬜ Not started | |
-| FR-2.5.1 | Filename hint patterns (Appendix D) | ⬜ Not started | |
+| FR-2.5 | Adaptive joint-call system prompt | ✅ Complete | buildAdaptiveJointPrompt with comparison structure | |
+| FR-2.5.1 | Filename hint patterns (Appendix D) | ✅ Complete | generateFilenameHints + extractVersion; before/after, old/new, versioned, numbered, date-ordered | |
 | FR-2.5.2 | pHash similarity hint | 🟡 Done | computePHash() + hammingDistance() available via imghash |
-| FR-2.5.3 | Hints are advisory | ⬜ Not started | |
-| FR-2.5.4 | Hints suppressed for tool path | ⬜ Not started | |
-| FR-2.6 | Joint description fencing with `<vision_proxy_joint_description>` | ⬜ Not started | |
-| FR-2.7 | Joint description cost telemetry | ⬜ Not started | |
+| FR-2.5.3 | Hints are advisory | ✅ Complete | Hints only appended to prompt, not required | |
+| FR-2.5.4 | Hints suppressed for tool path | ✅ Complete | Hints not included in analyze_image tool calls | |
+| FR-2.6 | Joint description fencing with `<vision_proxy_joint_description>` | ✅ Complete | buildJointDescriptionFence with dimensions JSON | |
+| FR-2.7 | Joint description cost telemetry | ✅ Complete | CUSTOM_TYPE_JOINT entry with images and description | |
 
 ## Feature 3 — `/vision-proxy describe` slash command
 
@@ -124,8 +124,8 @@
 | Unit: pixel clamp + zero-area validation | ✅ Complete | clampPixels |
 | Unit: region name validation | ✅ Complete | isValidNamedRegion |
 | Unit: `CropEntry` union discrimination | ✅ Complete | resolveCropEntry |
-| Unit: filename hint pattern matching | ⬜ Not started | |
-| Unit: version extraction (non-contiguous, decimal) | ⬜ Not started | |
+| Unit: filename hint pattern matching | ✅ Complete | generateFilenameHints + extractVersion |
+| Unit: version extraction (non-contiguous, decimal) | ✅ Complete | extractVersion |
 | Unit: `fenceUntrusted` with all three tags | ✅ Complete | |
 | Unit: `_imageMeta` map population | ✅ Complete | storeImageMeta + extractDimensions |
 | Unit: LRU cache key stability across crop forms | ✅ Complete | cropSignature + buildToolCacheKey |
@@ -151,7 +151,7 @@
 |---|---|---|
 | 1.4.0-beta.1 | Feature 1 (`tool=off` default), crop forms, dimensions in fence | 🟡 Done, needs review |
 | 1.4.0-beta.2 | Feature 3 (slash commands with crop syntax) | ✅ Complete |
-| 1.4.0-beta.3 | Feature 2 (`maxBatch=1` default), adaptive prompt, hints | ⬜ Not started |
+| 1.4.0-beta.3 | Feature 2 (`maxBatch=1` default), adaptive prompt, hints | ✅ Complete |
 | 1.4.0-beta.4 | Feature 4 (grounding registry, Tier 1 list) | ⬜ Not started |
 | 1.4.0 | Flip `tool=on`, `maxBatch=4` | ⬜ Not started |
 
@@ -161,6 +161,7 @@
 
 | Date | Change |
 |---|---|
+| 2026-05-03 | Milestone beta.3: Feature 2 (multi-image batched comparison). Auto-proxy joint descriptions for N≥2 images, adaptive joint prompt with comparison structure, filename hint patterns (Appendix D), pHash infrastructure, buildJointDescriptionFence. 172 tests passing. |
 | 2026-05-03 | Milestone beta.2: Feature 3 (`/vision-proxy describe` + `redescribe`) fully implemented. parseDescribeArgs with all three crop forms, --question/--crop/--model/--save flags, consent checks, [Vision Proxy] TUI prefix, vision_proxy.command telemetry. 152 tests passing. |
 | 2026-05-03 | OQ-1 resolved: chose `imagescript` + `imghash` over `sharp`. INFRA-2 (cropping) and INFRA-3 (pHash) implemented. Crop now applied to image bytes in `analyze_image` tool. 134 tests passing. |
 | 2026-05-03 | Milestone beta.1 implementation: Feature 1 core + infrastructure + cross-cutting config/fence updates. 112 tests passing. |

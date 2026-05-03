@@ -1337,7 +1337,7 @@ describe("parseDescribeArgs (describe)", () => {
 	});
 });
 
-describe("parseDescribeArgs (redescribe)", () => {
+	describe("parseDescribeArgs (redescribe)", () => {
 	it("parses redescribe with single image", () => {
 		const result = parseDescribeArgs("image.png", true);
 		assert.ok(typeof result !== "string", result as string);
@@ -1372,5 +1372,142 @@ describe("parseDescribeArgs (redescribe)", () => {
 			assert.equal(result.model, "Qwen/Qwen2.5-VL-7B");
 			assert.equal(result.save, true);
 		}
+	});
+});
+
+import {
+	buildJointDescriptionFence,
+	buildAdaptiveJointPrompt,
+	extractVersion,
+	generateFilenameHints,
+} from "../internal.ts";
+
+describe("buildJointDescriptionFence", () => {
+	it("builds joint fence with dimensions JSON", () => {
+		const metas = [
+			{ hash: "aaa", meta: { width: 1920, height: 1080, filename: "before.png" } },
+			{ hash: "bbb", meta: { width: 1920, height: 1080, filename: "after.png" } },
+		];
+		const fence = buildJointDescriptionFence(metas, "Images differ in sidebar.");
+		assert.ok(fence.startsWith("<vision_proxy_joint_description"));
+		assert.ok(fence.includes('images="2"'));
+		assert.ok(fence.includes('"image":"aaa"'));
+		assert.ok(fence.includes('"filename":"before.png"'));
+		assert.ok(fence.includes("Images differ in sidebar."));
+		assert.ok(fence.endsWith("</vision_proxy_joint_description>"));
+	});
+
+	it("includes grounding_format when provided", () => {
+		const metas = [{ hash: "abc", meta: { width: 100, height: 100 } }];
+		const fence = buildJointDescriptionFence(metas, "desc", "qwen_pixels");
+		assert.ok(fence.includes('grounding_format="qwen_pixels"'));
+	});
+
+	it("omits grounding_format when 'none'", () => {
+		const metas = [{ hash: "abc", meta: { width: 100, height: 100 } }];
+		const fence = buildJointDescriptionFence(metas, "desc", "none");
+		assert.ok(!fence.includes("grounding_format"));
+	});
+
+	it("handles missing meta gracefully", () => {
+		const metas = [{ hash: "abc" }];
+		const fence = buildJointDescriptionFence(metas, "desc");
+		assert.ok(fence.includes('"image":"abc"'));
+		assert.ok(!fence.includes("width"));
+	});
+});
+
+describe("buildAdaptiveJointPrompt", () => {
+	it("includes image labels and comparison instructions", () => {
+		const metas = [
+			{ hash: "a", meta: { width: 800, height: 600, filename: "img1.png" } },
+			{ hash: "b", meta: { width: 1024, height: 768, filename: "img2.png" } },
+		];
+		const prompt = buildAdaptiveJointPrompt(metas, "What changed?");
+		assert.ok(prompt.includes("2 images"));
+		assert.ok(prompt.includes("800x600"));
+		assert.ok(prompt.includes("1024x768"));
+		assert.ok(prompt.includes("img1.png"));
+		assert.ok(prompt.includes("What changed?"));
+		assert.ok(prompt.includes("comparison"));
+	});
+
+	it("includes hints when provided", () => {
+		const metas = [{ hash: "a" }, { hash: "b" }];
+		const prompt = buildAdaptiveJointPrompt(metas, "describe", ["before/after pair"]);
+		assert.ok(prompt.includes("before/after pair"));
+		assert.ok(prompt.includes("Structural hints"));
+	});
+
+	it("omits hint block when no hints", () => {
+		const metas = [{ hash: "a" }, { hash: "b" }];
+		const prompt = buildAdaptiveJointPrompt(metas, "describe");
+		assert.ok(!prompt.includes("Structural hints"));
+	});
+});
+
+describe("extractVersion", () => {
+	it("extracts v-prefixed version", () => {
+		const r = extractVersion("mockup_v2.png");
+		assert.deepEqual(r, { prefix: "mockup_v", version: 2 });
+	});
+
+	it("extracts decimal version", () => {
+		const r = extractVersion("draft_v1.2.png");
+		assert.deepEqual(r, { prefix: "draft_v", version: 1.2 });
+	});
+
+	it("extracts non-prefixed version", () => {
+		const r = extractVersion("app3.png");
+		assert.deepEqual(r, { prefix: "app", version: 3 });
+	});
+
+	it("returns null for no version", () => {
+		assert.equal(extractVersion("screenshot.png"), null);
+	});
+
+	it("returns null for version-only filename", () => {
+		assert.equal(extractVersion("3.png"), null);
+	});
+});
+
+describe("generateFilenameHints", () => {
+	it("detects before/after pair", () => {
+		const hints = generateFilenameHints(["before.png", "after.png"]);
+		assert.ok(hints.includes("before/after pair"));
+	});
+
+	it("detects old/new pair", () => {
+		const hints = generateFilenameHints(["old.png", "new.png"]);
+		assert.ok(hints.includes("old/new pair"));
+	});
+
+	it("detects versioned sequence", () => {
+		const hints = generateFilenameHints(["mockup_v2.png", "mockup_v4.png"]);
+		assert.ok(hints.some((h) => h.includes("versioned sequence")));
+	});
+
+	it("detects numbered underscore sequence", () => {
+		const hints = generateFilenameHints(["frame_1.png", "frame_2.png"]);
+		assert.ok(hints.includes("numbered sequence"));
+	});
+
+	it("detects numbered dash sequence", () => {
+		const hints = generateFilenameHints(["frame-1.png", "frame-2.png"]);
+		assert.ok(hints.includes("numbered sequence"));
+	});
+
+	it("detects date-ordered sequence", () => {
+		const hints = generateFilenameHints(["2026-05-01_mockup.png", "2026-05-03_mockup.png"]);
+		assert.ok(hints.includes("time-ordered sequence"));
+	});
+
+	it("returns empty for no pattern", () => {
+		const hints = generateFilenameHints(["cat.png", "dog.png"]);
+		assert.deepEqual(hints, []);
+	});
+
+	it("returns empty for single image", () => {
+		assert.deepEqual(generateFilenameHints(["before.png"]), []);
 	});
 });
