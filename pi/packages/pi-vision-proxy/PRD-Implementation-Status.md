@@ -80,12 +80,12 @@
 
 | FR | Description | Status | Notes |
 |---|---|---|---|
-| FR-3.1 | `describe` and `redescribe` subcommands with extended crop syntax | ⬜ Not started | |
-| FR-3.2 | `describe` semantics (resolve, joint, --save) | ⬜ Not started | |
-| FR-3.3 | `redescribe` sugar for `describe --save` | ⬜ Not started | |
-| FR-3.4 | Inline consent prompts | ⬜ Not started | |
-| FR-3.5 | TUI output with `[Vision Proxy]` prefix | ⬜ Not started | |
-| FR-3.6 | `vision_proxy.command` logging | ⬜ Not started | |
+| FR-3.1 | `describe` and `redescribe` subcommands with extended crop syntax | ✅ Complete | parseDescribeArgs + full slash handler | |
+| FR-3.2 | `describe` semantics (resolve, joint, --save) | ✅ Complete | Resolves images, supports --question/--crop/--model/--save | |
+| FR-3.3 | `redescribe` sugar for `describe --save` | ✅ Complete | parseDescribeArgs with isRedescribe flag | |
+| FR-3.4 | Inline consent prompts | ✅ Complete | Checks hasConsent before calling vision model | |
+| FR-3.5 | TUI output with `[Vision Proxy]` prefix | ✅ Complete | All output uses [Vision Proxy] prefix | |
+| FR-3.6 | `vision_proxy.command` logging | ✅ Complete | CUSTOM_TYPE_COMMAND entry with command, images, question, model, latency | |
 
 ## Feature 4 — Optional grounded-coordinate output
 
@@ -131,7 +131,7 @@
 | Unit: LRU cache key stability across crop forms | ✅ Complete | cropSignature + buildToolCacheKey |
 | Unit: grounding format registry lookups | ✅ Complete | getGroundingFormat |
 | Unit: config backwards compatibility | ✅ Complete | sanitize defaults for new fields |
-| Unit: slash command argument parsing (--crop forms) | ⬜ Not started | |
+| Unit: slash command argument parsing (--crop forms) | ✅ Complete | parseDescribeArgs: region, normalized, pixels, --question, --save, --model, redescribe restrictions | |
 | Unit: readEnvOverrides for 1.4.0 fields | ✅ Complete | |
 | Unit: buildDescriptionFence / buildAnalysisFence | ✅ Complete | |
 | Unit: cropImage (ImageScript cropping) | ✅ Complete | 10×10 PNG → 5×5 crop, JPEG encoding, OOB |
@@ -150,7 +150,7 @@
 | Milestone | Target | Status |
 |---|---|---|
 | 1.4.0-beta.1 | Feature 1 (`tool=off` default), crop forms, dimensions in fence | 🟡 Done, needs review |
-| 1.4.0-beta.2 | Feature 3 (slash commands with crop syntax) | ⬜ Not started |
+| 1.4.0-beta.2 | Feature 3 (slash commands with crop syntax) | ✅ Complete |
 | 1.4.0-beta.3 | Feature 2 (`maxBatch=1` default), adaptive prompt, hints | ⬜ Not started |
 | 1.4.0-beta.4 | Feature 4 (grounding registry, Tier 1 list) | ⬜ Not started |
 | 1.4.0 | Flip `tool=on`, `maxBatch=4` | ⬜ Not started |
@@ -161,6 +161,7 @@
 
 | Date | Change |
 |---|---|
+| 2026-05-03 | Milestone beta.2: Feature 3 (`/vision-proxy describe` + `redescribe`) fully implemented. parseDescribeArgs with all three crop forms, --question/--crop/--model/--save flags, consent checks, [Vision Proxy] TUI prefix, vision_proxy.command telemetry. 152 tests passing. |
 | 2026-05-03 | OQ-1 resolved: chose `imagescript` + `imghash` over `sharp`. INFRA-2 (cropping) and INFRA-3 (pHash) implemented. Crop now applied to image bytes in `analyze_image` tool. 134 tests passing. |
 | 2026-05-03 | Milestone beta.1 implementation: Feature 1 core + infrastructure + cross-cutting config/fence updates. 112 tests passing. |
 | 2026-05-03 | Initial status document created |

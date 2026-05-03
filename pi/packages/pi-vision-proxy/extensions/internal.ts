@@ -163,6 +163,155 @@ export const CUSTOM_TYPE_JOINT = "vision-proxy-joint-description";
 export const CUSTOM_TYPE_COMMAND = "vision-proxy-command";
 export const CUSTOM_TYPE_SKIP = "vision-proxy-skip";
 
+// ── Slash command: describe argument parsing ────────────────────────────
+
+export interface DescribeArgs {
+	/** Image references (file paths or sha256: hex strings). */
+	images: string[];
+	/** Optional question. If absent, generic system prompt is used. */
+	question?: string;
+	/** Optional per-image crop entries. */
+	crops?: CropEntry[];
+	/** Optional model override (provider/model-id). */
+	model?: string;
+	/** Whether to save the result as the canonical description. */
+	save: boolean;
+}
+
+/**
+ * Parse the arguments for `/vision-proxy describe` and `/vision-proxy redescribe`.
+ *
+ * Syntax:
+ *   describe <path|hash>... [--question "<text>"] [--crop <i>:<form>] [--model <provider/id>] [--save]
+ *   redescribe <path|hash> [--model <provider/id>]
+ */
+export function parseDescribeArgs(raw: string, isRedescribe = false): DescribeArgs | string {
+	const args = raw.trim();
+	if (!args) return "Usage: /vision-proxy describe <path|hash>... [--question \"<text>\"] [--crop <i>:<form>] [--model <provider/id>] [--save]";
+
+	const images: string[] = [];
+	let question: string | undefined;
+	const crops: CropEntry[] = [];
+	let model: string | undefined;
+	let save = false;
+
+	// Tokenize respecting quoted strings
+	const tokens = tokenizeArgs(args);
+
+	for (let i = 0; i < tokens.length; i++) {
+		const tok = tokens[i]!;
+
+		if (tok === "--question" || tok === "-q") {
+			if (isRedescribe) return "Error: --question is not valid for redescribe.";
+			i++;
+			if (i >= tokens.length) return "Error: --question requires a value.";
+			question = tokens[i];
+			continue;
+		}
+
+		if (tok === "--crop" || tok === "-c") {
+			if (isRedescribe) return "Error: --crop is not valid for redescribe.";
+			i++;
+			if (i >= tokens.length) return "Error: --crop requires a value. Example: --crop 0:r=top-right";
+			const parsed = parseCropArg(tokens[i]!);
+			if (typeof parsed === "string") return parsed; // error message
+			crops.push(parsed);
+			continue;
+		}
+
+		if (tok === "--model" || tok === "-m") {
+			i++;
+			if (i >= tokens.length) return "Error: --model requires a value. Example: --model Qwen/Qwen2.5-VL-7B-Instruct";
+			model = tokens[i];
+			continue;
+		}
+
+		if (tok === "--save" || tok === "-s") {
+			if (isRedescribe) return "Error: --save is implied for redescribe.";
+			save = true;
+			continue;
+		}
+
+		// Positional argument: image reference
+		if (tok.startsWith("-")) return `Error: unknown flag: ${tok}`;
+		images.push(tok);
+	}
+
+	if (images.length === 0) return "Error: at least one image reference (path or sha256:<hex>) is required.";
+
+	return {
+		images,
+		question,
+		crops: crops.length > 0 ? crops : undefined,
+		model,
+		save: isRedescribe ? true : save,
+	};
+}
+
+/**
+ * Tokenize a command string, respecting double-quoted strings.
+ */
+function tokenizeArgs(input: string): string[] {
+	const tokens: string[] = [];
+	let current = "";
+	let inQuote = false;
+	for (let i = 0; i < input.length; i++) {
+		const ch = input[i];
+		if (ch === '"') {
+			inQuote = !inQuote;
+			continue;
+		}
+		if (ch === ' ' && !inQuote) {
+			if (current) {
+				tokens.push(current);
+				current = "";
+			}
+			continue;
+		}
+		current += ch;
+	}
+	if (current) tokens.push(current);
+	return tokens;
+}
+
+/**
+ * Parse a --crop argument: `<image_index>:<form>`
+ * Forms: `r=<region>`, `n=<x>,<y>,<w>,<h>`, `p=<x>,<y>,<w>,<h>`
+ */
+function parseCropArg(arg: string): CropEntry | string {
+	const colonIdx = arg.indexOf(":");
+	if (colonIdx < 0) return "Error: --crop format is <image_index>:<form>. Example: --crop 0:r=top-right";
+
+	const idxStr = arg.slice(0, colonIdx);
+	const idx = Number.parseInt(idxStr, 10);
+	if (!Number.isFinite(idx) || idx < 0) return `Error: invalid image_index \"${idxStr}\". Must be a non-negative integer.`;
+
+	const form = arg.slice(colonIdx + 1);
+
+	// Named region: r=<name>
+	if (form.startsWith("r=")) {
+		const region = form.slice(2);
+		if (!isValidNamedRegion(region)) return `Error: unknown region \"${region}\". Valid: top-left, top-right, bottom-left, bottom-right, top, bottom, left, right, center, top-half, bottom-half, left-half, right-half.`;
+		return { image_index: idx, region: region as NamedRegion };
+	}
+
+	// Normalized: n=<x>,<y>,<w>,<h>
+	if (form.startsWith("n=")) {
+		const parts = form.slice(2).split(",").map(Number);
+		if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return `Error: normalized crop must be n=<x>,<y>,<w>,<h>. Got: ${form}`;
+		return { image_index: idx, normalized: { x: parts[0]!, y: parts[1]!, width: parts[2]!, height: parts[3]! } };
+	}
+
+	// Pixels: p=<x>,<y>,<w>,<h>
+	if (form.startsWith("p=")) {
+		const parts = form.slice(2).split(",").map(Number);
+		if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return `Error: pixel crop must be p=<x>,<y>,<w>,<h>. Got: ${form}`;
+		return { image_index: idx, pixels: { x: parts[0]!, y: parts[1]!, width: parts[2]!, height: parts[3]! } };
+	}
+
+	return `Error: unknown crop form \"${form}\". Use r=<region>, n=<x>,<y>,<w>,<h>, or p=<x>,<y>,<w>,<h>.`;
+}
+
 export const RECENT_MESSAGE_COUNT = 8;
 export const ASSISTANT_TRUNCATE_CHARS = 500;
 export const CONTEXT_MAX_CHARS = 3000;

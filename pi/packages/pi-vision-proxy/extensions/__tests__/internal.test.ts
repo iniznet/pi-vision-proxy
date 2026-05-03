@@ -1227,3 +1227,150 @@ describe("hammingDistance", () => {
 		assert.equal(dist, 8); // only first 2 hex chars compared
 	});
 });
+
+import { parseDescribeArgs } from "../internal.ts";
+
+describe("parseDescribeArgs (describe)", () => {
+	it("parses basic describe with single image", () => {
+		const result = parseDescribeArgs("/path/to/image.png");
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.deepEqual(result.images, ["/path/to/image.png"]);
+			assert.equal(result.save, false);
+			assert.equal(result.question, undefined);
+			assert.equal(result.model, undefined);
+			assert.equal(result.crops, undefined);
+		}
+	});
+
+	it("parses multiple images with --question", () => {
+		const result = parseDescribeArgs('img1.png img2.png --question "What is different?"');
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.deepEqual(result.images, ["img1.png", "img2.png"]);
+			assert.equal(result.question, "What is different?");
+		}
+	});
+
+	it("parses --crop with region form", () => {
+		const result = parseDescribeArgs("image.png --crop 0:r=top-right");
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.deepEqual(result.crops, [{ image_index: 0, region: "top-right" }]);
+		}
+	});
+
+	it("parses --crop with normalized form", () => {
+		const result = parseDescribeArgs("image.png --crop 0:n=0.1,0.2,0.5,0.6");
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.deepEqual(result.crops, [{ image_index: 0, normalized: { x: 0.1, y: 0.2, width: 0.5, height: 0.6 } }]);
+		}
+	});
+
+	it("parses --crop with pixel form", () => {
+		const result = parseDescribeArgs("image.png --crop 0:p=100,200,300,400");
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.deepEqual(result.crops, [{ image_index: 0, pixels: { x: 100, y: 200, width: 300, height: 400 } }]);
+		}
+	});
+
+	it("parses --save flag", () => {
+		const result = parseDescribeArgs("image.png --save");
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.equal(result.save, true);
+		}
+	});
+
+	it("parses --model override", () => {
+		const result = parseDescribeArgs("image.png --model Qwen/Qwen2.5-VL-7B");
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.equal(result.model, "Qwen/Qwen2.5-VL-7B");
+		}
+	});
+
+	it("parses full combined command", () => {
+		const result = parseDescribeArgs('a.png b.png --question "Compare them" --crop 0:r=center --crop 1:n=0,0,0.5,0.5 --model Qwen/Qwen2.5-VL-7B --save');
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.deepEqual(result.images, ["a.png", "b.png"]);
+			assert.equal(result.question, "Compare them");
+			assert.equal(result.save, true);
+			assert.equal(result.model, "Qwen/Qwen2.5-VL-7B");
+			assert.equal(result.crops!.length, 2);
+			assert.equal(result.crops![0].image_index, 0);
+			assert.equal(result.crops![1].image_index, 1);
+		}
+	});
+
+	it("returns error for empty input", () => {
+		const result = parseDescribeArgs("");
+		assert.equal(typeof result, "string");
+		assert.ok((result as string).includes("Usage"));
+	});
+
+	it("returns error for unknown region", () => {
+		const result = parseDescribeArgs("image.png --crop 0:r=invalid");
+		assert.equal(typeof result, "string");
+		assert.ok((result as string).includes("unknown region"));
+	});
+
+	it("returns error for bad crop form", () => {
+		const result = parseDescribeArgs("image.png --crop 0:bad=form");
+		assert.equal(typeof result, "string");
+		assert.ok((result as string).includes("unknown crop form"));
+	});
+
+	it("returns error for missing --question value", () => {
+		const result = parseDescribeArgs("image.png --question");
+		assert.equal(typeof result, "string");
+		assert.ok((result as string).includes("--question requires"));
+	});
+
+	it("returns error for unknown flag", () => {
+		const result = parseDescribeArgs("image.png --bogus");
+		assert.equal(typeof result, "string");
+		assert.ok((result as string).includes("unknown flag"));
+	});
+});
+
+describe("parseDescribeArgs (redescribe)", () => {
+	it("parses redescribe with single image", () => {
+		const result = parseDescribeArgs("image.png", true);
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.deepEqual(result.images, ["image.png"]);
+			assert.equal(result.save, true); // implied
+		}
+	});
+
+	it("returns error for redescribe with --question", () => {
+		const result = parseDescribeArgs('image.png --question "test"', true);
+		assert.equal(typeof result, "string");
+		assert.ok((result as string).includes("--question is not valid"));
+	});
+
+	it("returns error for redescribe with --crop", () => {
+		const result = parseDescribeArgs("image.png --crop 0:r=center", true);
+		assert.equal(typeof result, "string");
+		assert.ok((result as string).includes("--crop is not valid"));
+	});
+
+	it("returns error for redescribe with --save", () => {
+		const result = parseDescribeArgs("image.png --save", true);
+		assert.equal(typeof result, "string");
+		assert.ok((result as string).includes("--save is implied"));
+	});
+
+	it("allows --model in redescribe", () => {
+		const result = parseDescribeArgs("image.png --model Qwen/Qwen2.5-VL-7B", true);
+		assert.ok(typeof result !== "string", result as string);
+		if (typeof result !== "string") {
+			assert.equal(result.model, "Qwen/Qwen2.5-VL-7B");
+			assert.equal(result.save, true);
+		}
+	});
+});

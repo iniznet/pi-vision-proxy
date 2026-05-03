@@ -51,6 +51,7 @@ import {
 	bufferToPiAiImage,
 	type ConsentEntry,
 	cropImage,
+	CUSTOM_TYPE_COMMAND,
 	CUSTOM_TYPE_CONFIG,
 	CUSTOM_TYPE_CONSENT,
 	CUSTOM_TYPE_DESCRIPTION,
@@ -68,6 +69,7 @@ import {
 	hashImageData,
 	type ImageMeta,
 	type LegacyImage,
+	parseDescribeArgs,
 	piAiImageToBuffer,
 	LRUCache,
 	modeLabel,
@@ -1196,6 +1198,207 @@ export default function (pi: ExtensionAPI) {
 				}
 				writePersisted({ ...persisted, cacheSize: n });
 				ctx.ui.notify(`[vision-proxy] Cache size: ${n}`, "info");
+				return;
+			}
+
+			// ── describe / redescribe ───────────────────────────
+			if (sub === "describe" || sub === "redescribe") {
+				if (effective.mode === "off") {
+					ctx.ui.notify("[vision-proxy] Proxy is off — enable with /vision-proxy fallback or /vision-proxy always.", "warning");
+					return;
+				}
+				const parsed = parseDescribeArgs(value, sub === "redescribe");
+				if (typeof parsed === "string") {
+					ctx.ui.notify(`[vision-proxy] ${parsed}`, "warning");
+					return;
+				}
+
+				// Resolve model override
+				let descConfig = effective;
+				if (parsed.model) {
+					const parsedModel = parseModelString(parsed.model);
+					if (!parsedModel) {
+						ctx.ui.notify("[vision-proxy] Invalid model format. Use provider/model-id.", "warning");
+						return;
+					}
+					descConfig = { ...effective, ...parsedModel };
+				}
+
+				// Check consent
+				const descVisionModel = ctx.modelRegistry.find(descConfig.provider, descConfig.modelId);
+				if (!descVisionModel) {
+					ctx.ui.notify(`[vision-proxy] Model \"${modelLabel(descConfig)}\" not found. Use /vision-proxy pick to choose one.`, "error");
+					return;
+				}
+				if (!hasConsent(entries, descConfig.provider)) {
+					ctx.ui.notify(`[vision-proxy] Consent not granted for ${descConfig.provider}. Use /vision-proxy consent yes.`, "warning");
+					return;
+				}
+
+				// Resolve image references to PiAiImage
+				const resolvedImages: { image: PiAiImage; hash: string; meta?: ImageMeta }[] = [];
+				for (const ref of parsed.images) {
+					if (ref.includes("..")) {
+						ctx.ui.notify(`[vision-proxy] Error: path contains disallowed \"..\" segments.`, "error");
+						return;
+					}
+					const r = await readImageFileWithReason(ref);
+					if (!r.image) {
+						ctx.ui.notify(`[vision-proxy] Could not read image: ${ref} (${describeReadReason(r.reason ?? "not-an-image", r.bytes)})`, "error");
+						return;
+					}
+					const hash = hashImageData(r.image.data);
+					storeImageMeta(hash, r.image.data, r.filename);
+					resolvedImages.push({ image: r.image, hash, meta: _imageMeta.get(hash) });
+				}
+
+				if (resolvedImages.length === 0) {
+					ctx.ui.notify("[vision-proxy] No valid images provided.", "error");
+					return;
+				}
+
+				// Apply crops
+				const imagePayloads: { image: PiAiImage; hash: string; meta: ImageMeta | undefined; crop?: ReturnType<typeof resolveCropEntry> }[] = [];
+				for (let i = 0; i < resolvedImages.length; i++) {
+					const entry = resolvedImages[i]!;
+					const cropEntry = parsed.crops?.find((c) => c.image_index === i);
+					if (cropEntry) {
+						const meta = entry.meta;
+						if (!meta) {
+							ctx.ui.notify(`[vision-proxy] Cannot crop image ${i} — dimensions unknown.`, "error");
+							return;
+						}
+						try {
+							const resolved = resolveCropEntry(cropEntry, meta.width, meta.height);
+							imagePayloads.push({ ...entry, crop: resolved });
+						} catch (err) {
+							ctx.ui.notify(`[vision-proxy] Crop for image ${i} failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+							return;
+						}
+					} else {
+						imagePayloads.push(entry);
+					}
+				}
+
+				// Apply actual cropping to bytes
+				for (const p of imagePayloads) {
+					if (p.crop) {
+						const buf = piAiImageToBuffer(p.image);
+						const cropped = await cropImage(buf, p.crop, p.image.mimeType);
+						if (cropped) {
+							p.image = bufferToPiAiImage(cropped, p.image.mimeType);
+						} else {
+							ctx.ui.notify(`[vision-proxy] Crop failed — sending full image instead.`, "warning");
+							p.crop = undefined;
+						}
+					}
+				}
+
+				// Get auth
+				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(descVisionModel);
+				if (!auth.ok || !auth.apiKey) {
+					ctx.ui.notify(`[vision-proxy] No API key for ${descVisionModel.name ?? modelLabel(descConfig)}. Run: pi --login ${descConfig.provider}`, "error");
+					return;
+				}
+
+				// Build prompt
+				const question = parsed.question ?? "Describe the image in detail.";
+				const groundingFormat = getGroundingFormat(descConfig, descConfig.provider, descConfig.modelId);
+				const groundingInstruction = buildGroundingInstruction(groundingFormat);
+				const systemPrompt = descConfig.systemPrompt + groundingInstruction;
+
+				const imageLabels = imagePayloads.map((p, i) => {
+					const dim = `${p.meta?.width ?? "?"}x${p.meta?.height ?? "?"}`;
+					return `Image ${i + 1}: ${dim} pixels${p.meta?.filename ? ` (${p.meta.filename})` : ""}`;
+				}).join("\n");
+
+				const contentParts: Array<{ type: "text"; text: string } | PiAiImage> = [];
+				contentParts.push({
+					type: "text",
+					text:
+						(imagePayloads.length > 1
+							? `You are analysing ${imagePayloads.length} images.\n${imageLabels}\n\n`
+							: "") +
+						`Answer the following question about the image${imagePayloads.length > 1 ? "s" : ""}:\n` +
+						`<question>\n${question}\n</question>\n\n` +
+						`Respond in the same language as the question. Be precise and factual.`,
+				});
+				for (const p of imagePayloads) {
+					contentParts.push(p.image);
+				}
+
+				ctx.ui.notify(`[Vision Proxy] Describing ${pluralImages(imagePayloads.length)} via ${descVisionModel.name ?? modelLabel(descConfig)}…`, "info");
+
+				try {
+					const startTime = Date.now();
+					const response = await complete(
+						descVisionModel,
+						{
+							systemPrompt,
+							messages: [{ role: "user", content: contentParts, timestamp: Date.now() }],
+						},
+						{ apiKey: auth.apiKey, headers: auth.headers, signal: ctx.signal },
+					);
+
+					const latencyMs = Date.now() - startTime;
+
+					if (response.stopReason === "aborted") {
+						ctx.ui.notify("[Vision Proxy] Cancelled.", "info");
+						return;
+					}
+
+					const text = response.content
+						.filter((c): c is { type: "text"; text: string } => c.type === "text")
+						.map((c) => c.text)
+						.join("\n")
+						.trim();
+
+					if (!text) {
+						ctx.ui.notify("[Vision Proxy] Vision model returned an empty response.", "error");
+						return;
+					}
+
+					// Build fence
+					let fence: string;
+					const primaryHash = imagePayloads[0]!.hash;
+					if (imagePayloads.length === 1) {
+						fence = buildAnalysisFence(
+							primaryHash,
+							text,
+							imagePayloads[0]!.meta,
+							imagePayloads[0]!.crop,
+							groundingFormat !== "none" ? groundingFormat : undefined,
+						);
+					} else {
+						fence = buildAnalysisFence(
+							imagePayloads.map((p) => p.hash).join("+"),
+							text,
+							undefined,
+							undefined,
+							groundingFormat !== "none" ? groundingFormat : undefined,
+						);
+					}
+
+					// Save as canonical description if --save / redescribe
+					if (parsed.save && imagePayloads.length === 1) {
+						pi.appendEntry(CUSTOM_TYPE_DESCRIPTION, { hash: primaryHash, description: text });
+					}
+
+					// Log telemetry
+					pi.appendEntry(CUSTOM_TYPE_COMMAND, {
+						command: sub,
+						images: imagePayloads.map((p) => p.hash),
+						question: question.slice(0, 200),
+						save: parsed.save,
+						model: `${descConfig.provider}/${descConfig.modelId}`,
+						latencyMs,
+					});
+
+					// Output
+					ctx.ui.notify(`\n[Vision Proxy] ${fence}`, "info");
+				} catch (err) {
+					ctx.ui.notify(`[Vision Proxy] Error: ${err instanceof Error ? err.message : String(err)}`, "error");
+				}
 				return;
 			}
 
