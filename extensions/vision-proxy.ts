@@ -435,7 +435,7 @@ async function ensureConsent(
 	if (!ctx.hasUI) {
 		ctx.ui.notify(
 			"[multimodal-proxy] First-use consent required. " +
-				`${message} Run /multimodal-proxy consent yes (or no) to record.`,
+				`${message} Run /multimodal-proxy consent yes to enable media analysis.`,
 			"warning",
 		);
 		return false;
@@ -965,7 +965,7 @@ async function handleAnalyzeImage(
 	// Check consent for the resolved vision provider
 	const entries = ctx.sessionManager.getEntries();
 	if (!hasConsent(entries, visionProvider)) {
-		return `Error: consent required before sending data to ${visionProvider}. Use /multimodal-proxy model ${visionProvider}/... then /multimodal-proxy consent yes, or call without a model override.`;
+		return `Error: consent required before sending data to ${visionProvider}. Please tell the user to run the following command and then retry:\n\n/multimodal-proxy consent yes`
 	}
 
 	// Resolve image references to PiAiImage objects
@@ -1320,6 +1320,14 @@ export default function (pi: ExtensionAPI) {
 				// Check consent for video provider
 				if (!(await ensureConsent({ ...config, provider: config.videoProvider }, ctx, entries, pi))) {
 					ctx.ui.notify("[multimodal-proxy] Video analysis skipped - no consent.", "warning");
+					// Inject actionable message so the agent tells the user what to do
+					return {
+						systemPrompt:
+							event.systemPrompt +
+							"\n\n[multimodal-proxy] ⚠️ Video/audio analysis was skipped because data-egress consent has not been granted for " +
+							config.videoProvider +
+							". Please tell the user to run the following command and then retry:\n\n/multimodal-proxy consent yes",
+					};
 				} else {
 					const videoResults: VideoAnalysisResult[] = [];
 					for (const mf of mediaFiles) {
@@ -1399,7 +1407,13 @@ export default function (pi: ExtensionAPI) {
 
 			if (!(await ensureConsent(config, ctx, entries, pi))) {
 				ctx.ui.notify("[multimodal-proxy] Skipped - no consent.", "warning");
-				return;
+				return {
+					systemPrompt:
+						event.systemPrompt +
+						"\n\n[multimodal-proxy] ⚠️ Image analysis was skipped because data-egress consent has not been granted for " +
+						config.provider +
+						". Please tell the user to run the following command and then retry:\n\n/multimodal-proxy consent yes",
+				};
 			}
 
 			const results = await analyzeImages(
