@@ -535,8 +535,6 @@ async function analyzeImages(
 	return results;
 }
 
-}
-
 async function handleAnalyzeImage(
 	params: {
 		images: string[];
