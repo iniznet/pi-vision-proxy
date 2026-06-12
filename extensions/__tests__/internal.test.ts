@@ -16,14 +16,7 @@ import {
 	buildConversationContext,
 	buildDescriptionFence,
 	buildAnalysisFence,
-	buildVideoDescriptionFence,
-	buildVideoEmptyResponseError,
-	buildVideoProxySection,
 	clampPixels,
-	extractXaiResponsesText,
-	formatXaiSttTranscript,
-	isTranscriptionRequest,
-	isXaiProvider,
 	CUSTOM_TYPE_CONFIG,
 	CUSTOM_TYPE_CONSENT,
 	CUSTOM_TYPE_DESCRIPTION,
@@ -32,8 +25,6 @@ import {
 	envFlags,
 	escapeAttr,
 	extractCandidateImagePaths,
-	extractCandidateVideoPaths,
-	extractCandidateAudioPaths,
 	extractDimensions,
 	fenceUntrusted,
 	findDescriptions,
@@ -42,7 +33,6 @@ import {
 	hasConsent,
 	hashImageData,
 	IMAGE_PATH_PLACEHOLDER,
-	VIDEO_PATH_PLACEHOLDER,
 	isPathAllowed,
 	isValidNamedRegion,
 	LRUCache,
@@ -64,7 +54,6 @@ import {
 	shouldStripImages,
 	splitSubcommand,
 	stripImagePaths,
-	stripMediaPaths,
 	toPiAiImage,
 	type VisionConfig,
 	writePersistentFile,
@@ -138,9 +127,8 @@ describe("sanitize", () => {
 	});
 
 	it("normalizes legacy x-ai provider id in config", () => {
-		const result = sanitize({ ...DEFAULT_CONFIG, provider: "x-ai", videoProvider: "x-ai" });
+		const result = sanitize({ ...DEFAULT_CONFIG, provider: "x-ai" });
 		assert.equal(result.provider, "xai");
-		assert.equal(result.videoProvider, "xai");
 	});
 
 	it("preserves valid values", () => {
@@ -191,12 +179,6 @@ describe("readEnvOverrides", () => {
 		assert.equal(out.modelId, "gpt-4o");
 	});
 
-	it("normalizes legacy x-ai video model env override", () => {
-		const out = readEnvOverrides({ PI_VISION_PROXY_VIDEO_MODEL: "x-ai/grok-4.3" });
-		assert.equal(out.videoProvider, "xai");
-		assert.equal(out.videoModelId, "grok-4.3");
-	});
-
 	it("ignores malformed model string", () => {
 		assert.deepEqual(readEnvOverrides({ PI_VISION_PROXY_MODEL: "noslash" }), {});
 	});
@@ -214,14 +196,14 @@ describe("readEnvOverrides", () => {
 
 describe("envFlags", () => {
 	it("reports presence per variable", () => {
-		assert.deepEqual(envFlags({}), { mode: false, model: false, context: false, tool: false, maxImagesPerCall: false, maxBatch: false, cacheSize: false, videoModel: false });
+		assert.deepEqual(envFlags({}), { mode: false, model: false, context: false, tool: false, maxImagesPerCall: false, maxBatch: false, cacheSize: false });
 		assert.deepEqual(
 			envFlags({
 				PI_VISION_PROXY_MODE: "x",
 				PI_VISION_PROXY_MODEL: "y",
 				PI_VISION_PROXY_INCLUDE_CONTEXT: "",
 			}),
-			{ mode: true, model: true, context: true, tool: false, maxImagesPerCall: false, maxBatch: false, cacheSize: false, videoModel: false },
+			{ mode: true, model: true, context: true, tool: false, maxImagesPerCall: false, maxBatch: false, cacheSize: false },
 		);
 	});
 });
@@ -503,45 +485,7 @@ describe("extractCandidateImagePaths", () => {
 	});
 });
 
-describe("extractCandidateMediaPaths", () => {
-	it("detects quoted Windows video paths with spaces", () => {
-		const input = `video is not working: "D:\\Downloads\\Rethinking Agents - Harness is All you Need_.mp4" transcribe this`;
-		assert.deepEqual(extractCandidateVideoPaths(input), [
-			"D:\\Downloads\\Rethinking Agents - Harness is All you Need_.mp4",
-		]);
-	});
 
-	it("detects unquoted video paths without spaces", () => {
-		assert.deepEqual(extractCandidateVideoPaths("see D:\\Downloads\\clip.mp4 now"), ["D:\\Downloads\\clip.mp4"]);
-		assert.deepEqual(extractCandidateVideoPaths("see ./clip.mkv now"), ["./clip.mkv"]);
-	});
-
-	it("detects unquoted Windows video paths with spaces", () => {
-		const input = "Transcribe this video with timestamps D:\\Downloads\\Rethinking Agents - Harness is All you Need_.mp4";
-		assert.deepEqual(extractCandidateVideoPaths(input), [
-			"D:\\Downloads\\Rethinking Agents - Harness is All you Need_.mp4",
-		]);
-	});
-
-	it("detects quoted relative paths and audio paths with spaces", () => {
-		assert.deepEqual(extractCandidateVideoPaths(`see "./my video.mp4" now`), ["./my video.mp4"]);
-		assert.deepEqual(extractCandidateAudioPaths(`listen "C:\\Users\\Me\\Audio File.m4a" please`), [
-			"C:\\Users\\Me\\Audio File.m4a",
-		]);
-	});
-
-	it("does not treat unquoted paths with spaces as a single path", () => {
-		assert.deepEqual(extractCandidateVideoPaths("see ./my video.mp4 now"), []);
-	});
-});
-
-describe("stripMediaPaths", () => {
-	it("replaces media paths with placeholder", () => {
-		const mediaPath = "D:\\Downloads\\Rethinking Agents - Harness is All you Need_.mp4";
-		const result = stripMediaPaths(`transcribe "${mediaPath}" please`, [mediaPath]);
-		assert.equal(result, `transcribe "${VIDEO_PATH_PLACEHOLDER}" please`);
-	});
-});
 
 describe("stripImagePaths", () => {
 	it("replaces a single path with placeholder", () => {
@@ -1056,81 +1000,6 @@ describe("extractDimensions", () => {
 	});
 });
 
-describe("buildVideoDescriptionFence", () => {
-	it("builds video fence with file, hash, and mime attributes", () => {
-		const fence = buildVideoDescriptionFence("abc123", "clip.mp4", "video/mp4", "Hello world");
-		assert.ok(fence.includes('file="clip.mp4"'));
-		assert.ok(fence.includes('hash="abc123"'));
-		assert.ok(fence.includes('mime="video/mp4"'));
-		assert.ok(fence.includes("Hello world"));
-	});
-});
-
-describe("buildVideoEmptyResponseError", () => {
-	it("returns actionable guidance for providers that accept video but return no text", () => {
-		const message = buildVideoEmptyResponseError("xai", "grok-4.3");
-		assert.ok(message.includes("empty response from xai/grok-4.3"));
-		assert.ok(message.includes("provider accepted the request but returned no text"));
-		assert.ok(message.includes("native xAI STT or Files/Responses path"));
-		assert.ok(message.includes("shorter clip"));
-		assert.ok(message.includes("smaller/transcoded video"));
-		assert.ok(message.includes("Gemini"));
-	});
-});
-
-describe("xAI native media helpers", () => {
-	it("detects transcription requests", () => {
-		assert.equal(isTranscriptionRequest("Transcribe this video with timestamps"), true);
-		assert.equal(isTranscriptionRequest("make SRT captions"), true);
-		assert.equal(isTranscriptionRequest("summarize visual scenes"), false);
-	});
-
-	it("detects xAI provider aliases", () => {
-		assert.equal(isXaiProvider("xai"), true);
-		assert.equal(isXaiProvider("x-ai"), true);
-		assert.equal(isXaiProvider("google"), false);
-	});
-
-	it("formats xAI STT words into timestamped transcript", () => {
-		const formatted = formatXaiSttTranscript({
-			text: "Hello world.",
-			language: "English",
-			duration: 1.5,
-			words: [
-				{ text: "Hello", start: 0.1, end: 0.5 },
-				{ text: "world.", start: 0.6, end: 1.2 },
-			],
-		}, "clip.mp4");
-		assert.ok(formatted.includes("xAI Speech-to-Text transcription for clip.mp4"));
-		assert.ok(formatted.includes("Detected language: English"));
-		assert.ok(formatted.includes("[00:00"));
-		assert.ok(formatted.includes("Hello world."));
-	});
-
-	it("extracts output text from xAI Responses objects", () => {
-		assert.equal(extractXaiResponsesText({ output_text: "direct" }), "direct");
-		assert.equal(extractXaiResponsesText({ output: [{ type: "message", content: [{ type: "output_text", text: "nested" }] }] }), "nested");
-	});
-});
-
-describe("buildVideoProxySection", () => {
-	it("instructs downstream agents to use injected video analysis instead of local transcription tools", () => {
-		const section = buildVideoProxySection(
-			1,
-			"x-ai",
-			"grok-4.3",
-			buildVideoDescriptionFence("abc123", "clip.mp4", "video/mp4", "[00:00] hello"),
-		);
-		assert.ok(section.includes("already analyzed the media"));
-		assert.ok(section.includes("answer from this injected context"));
-		assert.ok(section.includes("Do not run local media-processing or transcription tools"));
-		assert.ok(section.includes("ffmpeg"));
-		assert.ok(section.includes("Whisper"));
-		assert.ok(section.includes("Python"));
-		assert.ok(section.includes("Only use external/local tools"));
-		assert.ok(section.includes("<vision_proxy_video_description"));
-	});
-});
 
 describe("buildDescriptionFence", () => {
 	it("builds fence with metadata attributes", () => {

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.0] - 2026-06-12
+
+### Removed
+
+- **Video/audio support** — removed video and audio file detection, xAI STT/transcription, `fixVideoAudioPayload` wire-format fixer, `/multimodal-proxy video-model` command, `PI_VISION_PROXY_VIDEO_MODEL` and `PI_VISION_PROXY_MAX_VIDEO_BYTES` env vars, and all related helper functions (`analyzeVideo`, `callXaiStt`, `uploadXaiFile`, `deleteXaiFile`, `extractXaiResponsesText`, `formatXaiSttTranscript`, `isXaiProvider`, `isTranscriptionRequest`, `buildVideoDescriptionFence`, `buildVideoEmptyResponseError`, `buildVideoProxySection`, `readMediaFileWithReason`, `stripMediaPaths`, `extractCandidateVideoPaths`, `extractCandidateAudioPaths`, `isVideoPath`, `isAudioPath`). The extension now focuses purely on image description.
+- **`VisionConfig`** fields `videoProvider`, `videoModelId`, and `videoSystemPrompt` have been removed. Existing config files containing these fields will silently ignore them.
+
 ## [1.4.0-beta.1] - 2026-05-03
 
 ### Added
