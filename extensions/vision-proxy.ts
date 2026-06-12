@@ -1,5 +1,5 @@
 /**
- * Multimodal Proxy - automatic image description for any model in Pi
+ * Vision Proxy - automatic image description for any model in Pi
  *
  * Modes:
  *   "fallback" - only activates when the active model lacks image support (default)
@@ -7,19 +7,19 @@
  *   "off"      - disabled entirely
  *
  * Configuration:
- *   Interactive:  /multimodal-proxy              - shows current config & lets you change it
- *                 /multimodal-proxy fallback|always|off
- *                 /multimodal-proxy pick             - pick from vision-capable models (friendly names)
- *                 /multimodal-proxy model provider/model-id
+ *   Interactive:  /vision-proxy              - shows current config & lets you change it
+ *                 /vision-proxy fallback|always|off
+ *                 /vision-proxy pick             - pick from vision-capable models (friendly names)
+ *                 /vision-proxy model provider/model-id
 
- *                 /multimodal-proxy context on|off  - include conversation context in proxy prompt
- *                 /multimodal-proxy consent yes|no  - first-use data-egress consent
- *                 /multimodal-proxy tool on|off     - enable/disable analyze_image tool
- *                 /multimodal-proxy max-images-per-call <n>
- *                 /multimodal-proxy max-batch <n>
- *                 /multimodal-proxy cache-size <n>
+ *                 /vision-proxy context on|off  - include conversation context in proxy prompt
+ *                 /vision-proxy consent yes|no  - first-use data-egress consent
+ *                 /vision-proxy tool on|off     - enable/disable analyze_image tool
+ *                 /vision-proxy max-images-per-call <n>
+ *                 /vision-proxy max-batch <n>
+ *                 /vision-proxy cache-size <n>
  *
- *   Legacy alias: /vision-proxy <args> works identically.
+ *   Legacy alias: /multimodal-proxy <args> works identically.
  *
  *   Environment (override everything):
  *     PI_VISION_PROXY_MODE             - "fallback" | "always" | "off"
@@ -32,7 +32,7 @@
 
  *
  * Install:
- *   pi install ./packages/pi-multimodal-proxy
+ *   pi install ./packages/pi-vision-proxy
  */
 
 import { type ImageContent as PiAiImage, complete } from "@earendil-works/pi-ai";
@@ -202,21 +202,21 @@ async function pickVisionModel(
 ): Promise<void> {
 	if (envModel) {
 		ctx.ui.notify(
-			"[multimodal-proxy] PI_VISION_PROXY_MODEL is set - env overrides commands. Unset to change.",
+			"[vision-proxy] PI_VISION_PROXY_MODEL is set - env overrides commands. Unset to change.",
 			"warning",
 		);
 		return;
 	}
 	if (!ctx.hasUI) {
 		ctx.ui.notify(
-			"[multimodal-proxy] Pick needs UI. Use /multimodal-proxy model provider/id.",
+			"[vision-proxy] Pick needs UI. Use /vision-proxy model provider/id.",
 			"warning",
 		);
 		return;
 	}
 	const vision = ctx.modelRegistry.getAll().filter((m) => m.input.includes("image"));
 	if (vision.length === 0) {
-		ctx.ui.notify("[multimodal-proxy] No vision-capable models in registry.", "error");
+		ctx.ui.notify("[vision-proxy] No vision-capable models in registry.", "error");
 		return;
 	}
 
@@ -300,7 +300,7 @@ async function pickVisionModel(
 					fuzzyMatches(m.name ?? m.id, query),
 				);
 				if (filtered.length === 0) {
-					ctx.ui.notify(`[multimodal-proxy] No models match "${query}".`, "warning");
+					ctx.ui.notify(`[vision-proxy] No models match "${query}".`, "warning");
 					continue;
 				}
 				if (filtered.length === 1) {
@@ -400,8 +400,8 @@ async function ensureConsent(
 		`to ${modelLabel(config)}? (one-time consent for this session)`;
 	if (!ctx.hasUI) {
 		ctx.ui.notify(
-			"[multimodal-proxy] First-use consent required. " +
-				`${message} Run /multimodal-proxy consent yes to enable image analysis.`,
+			"[vision-proxy] First-use consent required. " +
+				`${message} Run /vision-proxy consent yes to enable image analysis.`,
 			"warning",
 		);
 		return false;
@@ -429,14 +429,14 @@ async function analyzeImages(
 	const visionModel = ctx.modelRegistry.find(config.provider, config.modelId);
 	if (!visionModel) {
 		ctx.ui.notify(
-			`[multimodal-proxy] Model "${modelLabel(config)}" not found. Use /multimodal-proxy pick to choose one.`,
+			`[vision-proxy] Model "${modelLabel(config)}" not found. Use /vision-proxy pick to choose one.`,
 			"error",
 		);
 		return null;
 	}
 	if (!visionModel.input.includes("image")) {
 		ctx.ui.notify(
-			`[multimodal-proxy] "${visionModel.name ?? modelLabel(config)}" doesn't support images!`,
+			`[vision-proxy] "${visionModel.name ?? modelLabel(config)}" doesn't support images!`,
 			"error",
 		);
 		return null;
@@ -444,14 +444,14 @@ async function analyzeImages(
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(visionModel);
 	if (!auth.ok || !auth.apiKey) {
 		ctx.ui.notify(
-			`[multimodal-proxy] No API key for ${visionModel.name ?? modelLabel(config)}. Run: pi --login ${config.provider}`,
+			`[vision-proxy] No API key for ${visionModel.name ?? modelLabel(config)}. Run: pi --login ${config.provider}`,
 			"error",
 		);
 		return null;
 	}
 
 	ctx.ui.notify(
-		`[multimodal-proxy] Analyzing ${pluralImages(images.length)} via ${visionModel.name ?? modelLabel(config)}...`,
+		`[vision-proxy] Analyzing ${pluralImages(images.length)} via ${visionModel.name ?? modelLabel(config)}...`,
 		"info",
 	);
 
@@ -514,13 +514,13 @@ async function analyzeImages(
 	const results = await Promise.all(tasks);
 
 	if (results.length > 0 && results.every((r) => r.error === "aborted")) {
-		ctx.ui.notify("[multimodal-proxy] Cancelled.", "info");
+		ctx.ui.notify("[vision-proxy] Cancelled.", "info");
 		return null;
 	}
 
 	for (const [i, r] of results.entries()) {
 		if (r.error && r.error !== "aborted") {
-			ctx.ui.notify(`[multimodal-proxy] Error on image ${i + 1}: ${r.error}`, "error");
+			ctx.ui.notify(`[vision-proxy] Error on image ${i + 1}: ${r.error}`, "error");
 		}
 	}
 
@@ -585,7 +585,7 @@ async function handleAnalyzeImage(
 	// Verify model exists and supports images
 	const visionModel = ctx.modelRegistry.find(visionProvider, visionModelId);
 	if (!visionModel) {
-		return `Error: model "${visionProvider}/${visionModelId}" not found in registry. Use /multimodal-proxy pick to choose a vision model.`;
+		return `Error: model "${visionProvider}/${visionModelId}" not found in registry. Use /vision-proxy pick to choose a vision model.`;
 	}
 	if (!visionModel.input.includes("image")) {
 		return `Error: model "${visionModel.name ?? visionModelId}" does not support image input.`;
@@ -594,7 +594,7 @@ async function handleAnalyzeImage(
 	// Check consent for the resolved vision provider
 	const entries = ctx.sessionManager.getEntries();
 	if (!hasConsent(entries, visionProvider)) {
-		return `Error: consent required before sending data to ${visionProvider}. Please tell the user to run the following command and then retry:\n\n/multimodal-proxy consent yes`
+		return `Error: consent required before sending data to ${visionProvider}. Please tell the user to run the following command and then retry:\n\n/vision-proxy consent yes`
 	}
 
 	// Resolve image references to PiAiImage objects
@@ -653,7 +653,7 @@ async function handleAnalyzeImage(
 				anyCropApplied = true;
 			} else {
 				ctx.ui.notify(
-					`[multimodal-proxy] Crop failed for an image — sending full image instead.`,
+					`[vision-proxy] Crop failed for an image — sending full image instead.`,
 					"warning",
 				);
 				p.crop = undefined; // don't report crop in fence
@@ -696,7 +696,7 @@ async function handleAnalyzeImage(
 	}
 
 	ctx.ui.notify(
-		`[multimodal-proxy] Analyzing ${pluralImages(imagePayloads.length)} via ${visionModel.name ?? modelLabel({ provider: visionProvider, modelId: visionModelId })}…`,
+		`[vision-proxy] Analyzing ${pluralImages(imagePayloads.length)} via ${visionModel.name ?? modelLabel({ provider: visionProvider, modelId: visionModelId })}…`,
 		"info",
 	);
 
@@ -829,7 +829,7 @@ export default function (pi: ExtensionAPI) {
 
 					// Runtime check - tool may have been disabled mid-session
 					if (config.tool !== "on" || config.mode === "off") {
-						return { content: [{ type: "text" as const, text: "Error: analyze_image tool is currently disabled. Use /multimodal-proxy tool on to enable." }] };
+						return { content: [{ type: "text" as const, text: "Error: analyze_image tool is currently disabled. Use /vision-proxy tool on to enable." }] };
 					}
 
 					// Rate limit per turn
@@ -862,8 +862,8 @@ export default function (pi: ExtensionAPI) {
 		_fileConfig = await readPersistentFile();
 		const config = resolveConfig(ctx.sessionManager.getEntries(), process.env, _fileConfig);
 		ctx.ui.setStatus(
-			"multimodal-proxy",
-			`multimodal-proxy: ${config.mode} → ${friendlyModelLabel(config, ctx.modelRegistry)}${config.tool === "on" && config.mode !== "off" ? " [+tool]" : ""}`,
+			"vision-proxy",
+			`vision-proxy: ${config.mode} → ${friendlyModelLabel(config, ctx.modelRegistry)}${config.tool === "on" && config.mode !== "off" ? " [+tool]" : ""}`,
 		);
 
 		// Register tool if enabled
@@ -894,7 +894,7 @@ export default function (pi: ExtensionAPI) {
 					storeImageMeta(hash, r.image.data, r.filename);
 				} else if (r.reason && r.reason !== "not-an-image") {
 					ctx.ui.notify(
-						`[multimodal-proxy] Skipped ${fp}: ${describeReadReason(r.reason, r.bytes)}`,
+						`[vision-proxy] Skipped ${fp}: ${describeReadReason(r.reason, r.bytes)}`,
 						"warning",
 					);
 				}
@@ -925,13 +925,13 @@ export default function (pi: ExtensionAPI) {
 
 
 			if (!(await ensureConsent(config, ctx, entries, pi))) {
-				ctx.ui.notify("[multimodal-proxy] Skipped - no consent.", "warning");
+				ctx.ui.notify("[vision-proxy] Skipped - no consent.", "warning");
 				return {
 					systemPrompt:
 						event.systemPrompt +
-						"\n\n[multimodal-proxy] ⚠️ Image analysis was skipped because data-egress consent has not been granted for " +
+						"\n\n[vision-proxy] ⚠️ Image analysis was skipped because data-egress consent has not been granted for " +
 						config.provider +
-						". Please tell the user to run the following command and then retry:\n\n/multimodal-proxy consent yes",
+						". Please tell the user to run the following command and then retry:\n\n/vision-proxy consent yes",
 				};
 			}
 
@@ -958,8 +958,8 @@ export default function (pi: ExtensionAPI) {
 
 			ctx.ui.notify(
 				successful.length === results.length
-					? "[multimodal-proxy] ✓ Image analysis complete"
-					: `[multimodal-proxy] ✓ Analyzed ${successful.length}/${results.length} ${results.length === 1 ? "image" : "images"}`,
+					? "[vision-proxy] ✓ Image analysis complete"
+					: `[vision-proxy] ✓ Analyzed ${successful.length}/${results.length} ${results.length === 1 ? "image" : "images"}`,
 				"info",
 			);
 
@@ -1120,9 +1120,9 @@ export default function (pi: ExtensionAPI) {
 		if (modified) return { messages };
 	});
 
-	// ── /multimodal-proxy command ─────────────────────────────────────────
+	// ── /vision-proxy command ─────────────────────────────────────────
 
-	// Register both names — /multimodal-proxy (canonical) and /multimodal-proxy (legacy alias)
+	// Register both names — /vision-proxy (canonical) and /vision-proxy (legacy alias)
 	const commandHandler = async (args: string, ctx: ExtensionContext) => {
 			const entries = ctx.sessionManager.getEntries();
 			const persisted = persistedBase(entries);
@@ -1153,7 +1153,7 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "fallback" || sub === "always" || sub === "off") {
 				if (env.mode) {
 					ctx.ui.notify(
-						"[multimodal-proxy] PI_VISION_PROXY_MODE is set - env overrides commands. Unset to change.",
+						"[vision-proxy] PI_VISION_PROXY_MODE is set - env overrides commands. Unset to change.",
 						"warning",
 					);
 					return;
@@ -1178,7 +1178,7 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "model") {
 				if (env.model) {
 					ctx.ui.notify(
-						"[multimodal-proxy] PI_VISION_PROXY_MODEL is set - env overrides commands. Unset to change.",
+						"[vision-proxy] PI_VISION_PROXY_MODEL is set - env overrides commands. Unset to change.",
 						"warning",
 					);
 					return;
@@ -1186,7 +1186,7 @@ export default function (pi: ExtensionAPI) {
 				const parsed = parseModelString(value);
 				if (!parsed) {
 					ctx.ui.notify(
-						"Usage: /multimodal-proxy model provider/model-id\nExample: /multimodal-proxy model anthropic/claude-sonnet-4-5",
+						"Usage: /vision-proxy model provider/model-id\nExample: /vision-proxy model anthropic/claude-sonnet-4-5",
 						"warning",
 					);
 					return;
@@ -1200,18 +1200,18 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "consent") {
 				if (isTrue(valueLower)) {
 					pi.appendEntry<ConsentEntry>(CUSTOM_TYPE_CONSENT, { granted: true, provider: effective.provider });
-					ctx.ui.notify("[multimodal-proxy] Consent granted.", "info");
+					ctx.ui.notify("[vision-proxy] Consent granted.", "info");
 					return;
 				}
 				if (isFalse(valueLower)) {
 					pi.appendEntry<ConsentEntry>(CUSTOM_TYPE_CONSENT, { granted: false, provider: effective.provider });
-					ctx.ui.notify("[multimodal-proxy] Consent revoked.", "warning");
+					ctx.ui.notify("[vision-proxy] Consent revoked.", "warning");
 					return;
 				}
 				ctx.ui.notify(
-					`[multimodal-proxy] Consent: ${
+					`[vision-proxy] Consent: ${
 						hasConsent(entries, effective.provider) ? "granted" : "not granted"
-					}. Use /multimodal-proxy consent yes|no.`,
+					}. Use /vision-proxy consent yes|no.`,
 					"info",
 				);
 				return;
@@ -1221,25 +1221,25 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "context") {
 				if (env.context) {
 					ctx.ui.notify(
-						"[multimodal-proxy] PI_VISION_PROXY_INCLUDE_CONTEXT is set - env overrides commands. Unset to change.",
+						"[vision-proxy] PI_VISION_PROXY_INCLUDE_CONTEXT is set - env overrides commands. Unset to change.",
 						"warning",
 					);
 					return;
 				}
 				if (isTrue(valueLower)) {
 					writePersisted({ ...persisted, includeContext: true });
-					ctx.ui.notify("[multimodal-proxy] Conversation context: ON", "info");
+					ctx.ui.notify("[vision-proxy] Conversation context: ON", "info");
 					return;
 				}
 				if (isFalse(valueLower)) {
 					writePersisted({ ...persisted, includeContext: false });
-					ctx.ui.notify("[multimodal-proxy] Conversation context: OFF", "warning");
+					ctx.ui.notify("[vision-proxy] Conversation context: OFF", "warning");
 					return;
 				}
 				ctx.ui.notify(
-					`[multimodal-proxy] Conversation context: ${
+					`[vision-proxy] Conversation context: ${
 						effective.includeContext ? "ON" : "OFF"
-					}. Use /multimodal-proxy context on|off.`,
+					}. Use /vision-proxy context on|off.`,
 					"info",
 				);
 				return;
@@ -1249,7 +1249,7 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "tool") {
 				if (env.tool) {
 					ctx.ui.notify(
-						"[multimodal-proxy] PI_VISION_PROXY_TOOL is set - env overrides commands. Unset to change.",
+						"[vision-proxy] PI_VISION_PROXY_TOOL is set - env overrides commands. Unset to change.",
 						"warning",
 					);
 					return;
@@ -1257,16 +1257,16 @@ export default function (pi: ExtensionAPI) {
 				if (valueLower === "on") {
 					const next = writePersisted({ ...persisted, tool: "on" });
 					syncToolRegistration(resolveConfig(ctx.sessionManager.getEntries(), process.env, _fileConfig));
-					ctx.ui.notify(`[multimodal-proxy] analyze_image tool: ON`, "info");
+					ctx.ui.notify(`[vision-proxy] analyze_image tool: ON`, "info");
 					return;
 				}
 				if (valueLower === "off") {
 					writePersisted({ ...persisted, tool: "off" });
-					ctx.ui.notify(`[multimodal-proxy] analyze_image tool: OFF (existing calls will return disabled error)`, "warning");
+					ctx.ui.notify(`[vision-proxy] analyze_image tool: OFF (existing calls will return disabled error)`, "warning");
 					return;
 				}
 				ctx.ui.notify(
-					`[multimodal-proxy] Tool: ${effective.tool}. Use /multimodal-proxy tool on|off.`,
+					`[vision-proxy] Tool: ${effective.tool}. Use /vision-proxy tool on|off.`,
 					"info",
 				);
 				return;
@@ -1276,18 +1276,18 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "max-images-per-call") {
 				if (env.maxImagesPerCall) {
 					ctx.ui.notify(
-						"[multimodal-proxy] PI_VISION_PROXY_MAX_IMAGES_PER_CALL is set - env overrides commands.",
+						"[vision-proxy] PI_VISION_PROXY_MAX_IMAGES_PER_CALL is set - env overrides commands.",
 						"warning",
 					);
 					return;
 				}
 				const n = Number.parseInt(value, 10);
 				if (!Number.isFinite(n) || n < 1 || n > 20) {
-					ctx.ui.notify("Usage: /multimodal-proxy max-images-per-call <1-20>", "warning");
+					ctx.ui.notify("Usage: /vision-proxy max-images-per-call <1-20>", "warning");
 					return;
 				}
 				writePersisted({ ...persisted, maxImagesPerCall: n });
-				ctx.ui.notify(`[multimodal-proxy] Max images per call: ${n}`, "info");
+				ctx.ui.notify(`[vision-proxy] Max images per call: ${n}`, "info");
 				return;
 			}
 
@@ -1295,18 +1295,18 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "max-batch") {
 				if (env.maxBatch) {
 					ctx.ui.notify(
-						"[multimodal-proxy] PI_VISION_PROXY_MAX_BATCH is set - env overrides commands.",
+						"[vision-proxy] PI_VISION_PROXY_MAX_BATCH is set - env overrides commands.",
 						"warning",
 					);
 					return;
 				}
 				const n = Number.parseInt(value, 10);
 				if (!Number.isFinite(n) || n < 1 || n > 10) {
-					ctx.ui.notify("Usage: /multimodal-proxy max-batch <1-10>", "warning");
+					ctx.ui.notify("Usage: /vision-proxy max-batch <1-10>", "warning");
 					return;
 				}
 				writePersisted({ ...persisted, maxBatch: n });
-				ctx.ui.notify(`[multimodal-proxy] Max batch: ${n}`, "info");
+				ctx.ui.notify(`[vision-proxy] Max batch: ${n}`, "info");
 				return;
 			}
 
@@ -1314,18 +1314,18 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "cache-size") {
 				if (env.cacheSize) {
 					ctx.ui.notify(
-						"[multimodal-proxy] PI_VISION_PROXY_CACHE_SIZE is set - env overrides commands.",
+						"[vision-proxy] PI_VISION_PROXY_CACHE_SIZE is set - env overrides commands.",
 						"warning",
 					);
 					return;
 				}
 				const n = Number.parseInt(value, 10);
 				if (!Number.isFinite(n) || n < 0 || n > 500) {
-					ctx.ui.notify("Usage: /multimodal-proxy cache-size <0-500>", "warning");
+					ctx.ui.notify("Usage: /vision-proxy cache-size <0-500>", "warning");
 					return;
 				}
 				writePersisted({ ...persisted, cacheSize: n });
-				ctx.ui.notify(`[multimodal-proxy] Cache size: ${n}`, "info");
+				ctx.ui.notify(`[vision-proxy] Cache size: ${n}`, "info");
 				return;
 			}
 
@@ -1337,10 +1337,10 @@ export default function (pi: ExtensionAPI) {
 				if (gmSub === "list") {
 					const entries = Object.entries(effective.groundingModels);
 					if (entries.length === 0) {
-						ctx.ui.notify("[multimodal-proxy] No grounding models configured.", "info");
+						ctx.ui.notify("[vision-proxy] No grounding models configured.", "info");
 					} else {
 						const lines = entries.map(([k, v]) => `  ${k} → ${v.format}`).join("\n");
-						ctx.ui.notify(`[multimodal-proxy] Grounding models:\n${lines}`, "info");
+						ctx.ui.notify(`[vision-proxy] Grounding models:\n${lines}`, "info");
 					}
 					return;
 				}
@@ -1348,14 +1348,14 @@ export default function (pi: ExtensionAPI) {
 				// reset
 				if (gmSub === "reset") {
 					writePersisted({ ...persisted, groundingModels: { ...DEFAULT_CONFIG.groundingModels } });
-					ctx.ui.notify("[multimodal-proxy] Grounding models reset to defaults.", "info");
+					ctx.ui.notify("[vision-proxy] Grounding models reset to defaults.", "info");
 					return;
 				}
 
 				// add <provider/model-id> [--format <fmt>]
 				if (gmSub === "add") {
 					if (!gmValue) {
-						ctx.ui.notify("Usage: /multimodal-proxy grounding-models add <provider/model-id> [--format <fmt>]", "warning");
+						ctx.ui.notify("Usage: /vision-proxy grounding-models add <provider/model-id> [--format <fmt>]", "warning");
 						return;
 					}
 					// Parse --format from gmValue
@@ -1367,7 +1367,7 @@ export default function (pi: ExtensionAPI) {
 						const parsed = parseGroundingFormat(gmTokens[fmtIdx + 1]!);
 						if (!parsed) {
 							ctx.ui.notify(
-								`[multimodal-proxy] Invalid format "${gmTokens[fmtIdx + 1]}". Valid: ${VALID_GROUNDING_FORMATS.join(", ")}`,
+								`[vision-proxy] Invalid format "${gmTokens[fmtIdx + 1]}". Valid: ${VALID_GROUNDING_FORMATS.join(", ")}`,
 								"warning",
 							);
 							return;
@@ -1385,50 +1385,50 @@ export default function (pi: ExtensionAPI) {
 								["Yes, add anyway", "Cancel"],
 							);
 							if (confirm !== "Yes, add anyway") {
-								ctx.ui.notify("[multimodal-proxy] Cancelled.", "info");
+								ctx.ui.notify("[vision-proxy] Cancelled.", "info");
 								return;
 							}
 						} else {
 							ctx.ui.notify(
-								`[multimodal-proxy] Warning: ${modelKey} is not designed for grounding. Adding with format ${format}.`,
+								`[vision-proxy] Warning: ${modelKey} is not designed for grounding. Adding with format ${format}.`,
 								"warning",
 							);
 						}
 					} else if (!fmtIdx || fmtIdx < 0) {
 						// Default format used - mention it
 						ctx.ui.notify(
-							`[multimodal-proxy] Note: defaulting to qwen_pixels format. Use --format to specify.`,
+							`[vision-proxy] Note: defaulting to qwen_pixels format. Use --format to specify.`,
 							"info",
 						);
 					}
 
 					const updated = { ...persisted.groundingModels, [modelKey]: { format } };
 					writePersisted({ ...persisted, groundingModels: updated });
-					ctx.ui.notify(`[multimodal-proxy] Added ${modelKey} with format ${format}.`, "info");
+					ctx.ui.notify(`[vision-proxy] Added ${modelKey} with format ${format}.`, "info");
 					return;
 				}
 
 				// remove <provider/model-id>
 				if (gmSub === "remove") {
 					if (!gmValue) {
-						ctx.ui.notify("Usage: /multimodal-proxy grounding-models remove <provider/model-id>", "warning");
+						ctx.ui.notify("Usage: /vision-proxy grounding-models remove <provider/model-id>", "warning");
 						return;
 					}
 					const modelKey = gmValue.split(/\s+/)[0]!;
 					if (!persisted.groundingModels[modelKey]) {
-						ctx.ui.notify(`[multimodal-proxy] ${modelKey} is not in the grounding models list.`, "warning");
+						ctx.ui.notify(`[vision-proxy] ${modelKey} is not in the grounding models list.`, "warning");
 						return;
 					}
 					const updated = { ...persisted.groundingModels };
 					delete updated[modelKey];
 					writePersisted({ ...persisted, groundingModels: updated });
-					ctx.ui.notify(`[multimodal-proxy] Removed ${modelKey} from grounding models.`, "info");
+					ctx.ui.notify(`[vision-proxy] Removed ${modelKey} from grounding models.`, "info");
 					return;
 				}
 
 				// Fallthrough - show usage
 				ctx.ui.notify(
-					"Usage: /multimodal-proxy grounding-models <list|reset|add|remove>\n" +
+					"Usage: /vision-proxy grounding-models <list|reset|add|remove>\n" +
 					"  list                              - show configured models\n" +
 					"  reset                             - restore defaults\n" +
 					"  add <provider/id> [--format <f>]  - add a model\n" +
@@ -1441,12 +1441,12 @@ export default function (pi: ExtensionAPI) {
 			// ── describe / redescribe ───────────────────────────
 			if (sub === "describe" || sub === "redescribe") {
 				if (effective.mode === "off") {
-					ctx.ui.notify("[multimodal-proxy] Proxy is off - enable with /multimodal-proxy fallback or /multimodal-proxy always.", "warning");
+					ctx.ui.notify("[vision-proxy] Proxy is off - enable with /vision-proxy fallback or /vision-proxy always.", "warning");
 					return;
 				}
 				const parsed = parseDescribeArgs(value, sub === "redescribe");
 				if (typeof parsed === "string") {
-					ctx.ui.notify(`[multimodal-proxy] ${parsed}`, "warning");
+					ctx.ui.notify(`[vision-proxy] ${parsed}`, "warning");
 					return;
 				}
 
@@ -1455,7 +1455,7 @@ export default function (pi: ExtensionAPI) {
 				if (parsed.model) {
 					const parsedModel = parseModelString(parsed.model);
 					if (!parsedModel) {
-						ctx.ui.notify("[multimodal-proxy] Invalid model format. Use provider/model-id.", "warning");
+						ctx.ui.notify("[vision-proxy] Invalid model format. Use provider/model-id.", "warning");
 						return;
 					}
 					descConfig = { ...effective, ...parsedModel };
@@ -1464,11 +1464,11 @@ export default function (pi: ExtensionAPI) {
 				// Check consent
 				const descVisionModel = ctx.modelRegistry.find(descConfig.provider, descConfig.modelId);
 				if (!descVisionModel) {
-					ctx.ui.notify(`[multimodal-proxy] Model \"${modelLabel(descConfig)}\" not found. Use /multimodal-proxy pick to choose one.`, "error");
+					ctx.ui.notify(`[vision-proxy] Model \"${modelLabel(descConfig)}\" not found. Use /vision-proxy pick to choose one.`, "error");
 					return;
 				}
 				if (!hasConsent(entries, descConfig.provider)) {
-					ctx.ui.notify(`[multimodal-proxy] Consent not granted for ${descConfig.provider}. Use /multimodal-proxy consent yes.`, "warning");
+					ctx.ui.notify(`[vision-proxy] Consent not granted for ${descConfig.provider}. Use /vision-proxy consent yes.`, "warning");
 					return;
 				}
 
@@ -1476,12 +1476,12 @@ export default function (pi: ExtensionAPI) {
 				const resolvedImages: { image: PiAiImage; hash: string; meta?: ImageMeta }[] = [];
 				for (const ref of parsed.images) {
 					if (ref.includes("..")) {
-						ctx.ui.notify(`[multimodal-proxy] Error: path contains disallowed \"..\" segments.`, "error");
+						ctx.ui.notify(`[vision-proxy] Error: path contains disallowed \"..\" segments.`, "error");
 						return;
 					}
 					const r = await readImageFileWithReason(ref);
 					if (!r.image) {
-						ctx.ui.notify(`[multimodal-proxy] Could not read image: ${ref} (${describeReadReason(r.reason ?? "not-an-image", r.bytes)})`, "error");
+						ctx.ui.notify(`[vision-proxy] Could not read image: ${ref} (${describeReadReason(r.reason ?? "not-an-image", r.bytes)})`, "error");
 						return;
 					}
 					const hash = hashImageData(r.image.data);
@@ -1490,11 +1490,11 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				if (resolvedImages.length === 0) {
-					ctx.ui.notify("[multimodal-proxy] No valid images provided.", "error");
+					ctx.ui.notify("[vision-proxy] No valid images provided.", "error");
 					return;
 				}
 				if (resolvedImages.length > descConfig.maxImagesPerCall) {
-					ctx.ui.notify(`[multimodal-proxy] Too many images (${resolvedImages.length}). Maximum is ${descConfig.maxImagesPerCall}.`, "error");
+					ctx.ui.notify(`[vision-proxy] Too many images (${resolvedImages.length}). Maximum is ${descConfig.maxImagesPerCall}.`, "error");
 					return;
 				}
 
@@ -1503,12 +1503,12 @@ export default function (pi: ExtensionAPI) {
 					const seen = new Set<number>();
 					for (const c of parsed.crops) {
 						if (seen.has(c.image_index)) {
-							ctx.ui.notify(`[multimodal-proxy] Duplicate crop for image index ${c.image_index}.`, "error");
+							ctx.ui.notify(`[vision-proxy] Duplicate crop for image index ${c.image_index}.`, "error");
 							return;
 						}
 						seen.add(c.image_index);
 						if (c.image_index < 0 || c.image_index >= resolvedImages.length) {
-							ctx.ui.notify(`[multimodal-proxy] Crop image_index ${c.image_index} is out of range (0-${resolvedImages.length - 1}).`, "error");
+							ctx.ui.notify(`[vision-proxy] Crop image_index ${c.image_index} is out of range (0-${resolvedImages.length - 1}).`, "error");
 							return;
 						}
 					}
@@ -1522,14 +1522,14 @@ export default function (pi: ExtensionAPI) {
 					if (cropEntry) {
 						const meta = entry.meta;
 						if (!meta) {
-							ctx.ui.notify(`[multimodal-proxy] Cannot crop image ${i} - dimensions unknown.`, "error");
+							ctx.ui.notify(`[vision-proxy] Cannot crop image ${i} - dimensions unknown.`, "error");
 							return;
 						}
 						try {
 							const resolved = resolveCropEntry(cropEntry, meta.width, meta.height);
 							imagePayloads.push({ ...entry, crop: resolved });
 						} catch (err) {
-							ctx.ui.notify(`[multimodal-proxy] Crop for image ${i} failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+							ctx.ui.notify(`[vision-proxy] Crop for image ${i} failed: ${err instanceof Error ? err.message : String(err)}`, "error");
 							return;
 						}
 					} else {
@@ -1545,7 +1545,7 @@ export default function (pi: ExtensionAPI) {
 						if (cropped) {
 							p.image = bufferToPiAiImage(cropped, p.image.mimeType);
 						} else {
-							ctx.ui.notify(`[multimodal-proxy] Crop failed - sending full image instead.`, "warning");
+							ctx.ui.notify(`[vision-proxy] Crop failed - sending full image instead.`, "warning");
 							p.crop = undefined;
 						}
 					}
@@ -1554,7 +1554,7 @@ export default function (pi: ExtensionAPI) {
 				// Get auth
 				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(descVisionModel);
 				if (!auth.ok || !auth.apiKey) {
-					ctx.ui.notify(`[multimodal-proxy] No API key for ${descVisionModel.name ?? modelLabel(descConfig)}. Run: pi --login ${descConfig.provider}`, "error");
+					ctx.ui.notify(`[vision-proxy] No API key for ${descVisionModel.name ?? modelLabel(descConfig)}. Run: pi --login ${descConfig.provider}`, "error");
 					return;
 				}
 
@@ -1677,7 +1677,7 @@ export default function (pi: ExtensionAPI) {
 			if (!ctx.hasUI) {
 				ctx.ui.notify(
 					summary +
-						`\nCommands: /multimodal-proxy fallback|always|off | pick | model provider/model-id | context on|off | consent yes|no | tool on|off | max-images-per-call <n> | max-batch <n> | cache-size <n>`,
+						`\nCommands: /vision-proxy fallback|always|off | pick | model provider/model-id | context on|off | consent yes|no | tool on|off | max-images-per-call <n> | max-batch <n> | cache-size <n>`,
 					"info",
 				);
 				return;
@@ -1698,7 +1698,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (choice.startsWith("Mode:")) {
 				if (env.mode) {
-					ctx.ui.notify("[multimodal-proxy] Env override active for mode.", "warning");
+					ctx.ui.notify("[vision-proxy] Env override active for mode.", "warning");
 					return;
 				}
 				const modeChoice = await ctx.ui.select("Select mode", ["fallback", "always", "off"]);
@@ -1716,7 +1716,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (choice.startsWith("Include context")) {
 				if (env.context) {
-					ctx.ui.notify("[multimodal-proxy] Env override active for context.", "warning");
+					ctx.ui.notify("[vision-proxy] Env override active for context.", "warning");
 					return;
 				}
 				const next = writePersisted({ ...persisted, includeContext: !effective.includeContext });
@@ -1729,7 +1729,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (choice.startsWith("Tool:")) {
 				if (env.tool) {
-					ctx.ui.notify("[multimodal-proxy] Env override active for tool.", "warning");
+					ctx.ui.notify("[vision-proxy] Env override active for tool.", "warning");
 					return;
 				}
 				const nextTool = effective.tool === "on" ? "off" : "on";
@@ -1741,7 +1741,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (choice.startsWith("Max images")) {
 				if (env.maxImagesPerCall) {
-					ctx.ui.notify("[multimodal-proxy] Env override active for max-images-per-call.", "warning");
+					ctx.ui.notify("[vision-proxy] Env override active for max-images-per-call.", "warning");
 					return;
 				}
 				const val = await ctx.ui.input("Max images per call (1-20)", String(effective.maxImagesPerCall));
@@ -1758,7 +1758,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (choice.startsWith("Max batch")) {
 				if (env.maxBatch) {
-					ctx.ui.notify("[multimodal-proxy] Env override active for max-batch.", "warning");
+					ctx.ui.notify("[vision-proxy] Env override active for max-batch.", "warning");
 					return;
 				}
 				const val = await ctx.ui.input("Max batch (1-10)", String(effective.maxBatch));
@@ -1775,7 +1775,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (choice.startsWith("Cache size")) {
 				if (env.cacheSize) {
-					ctx.ui.notify("[multimodal-proxy] Env override active for cache-size.", "warning");
+					ctx.ui.notify("[vision-proxy] Env override active for cache-size.", "warning");
 					return;
 				}
 				const val = await ctx.ui.input("Cache size (0-500)", String(effective.cacheSize));
@@ -1799,12 +1799,12 @@ export default function (pi: ExtensionAPI) {
 		};
 
 	// Register both command names
-	pi.registerCommand("multimodal-proxy", {
-		description: "Configure multimodal proxy (images — mode, model, context, consent, tool)",
+	pi.registerCommand("vision-proxy", {
+		description: "Configure vision proxy (images — mode, model, context, consent, tool)",
 		handler: commandHandler,
 	});
-	pi.registerCommand("vision-proxy", {
-		description: "Alias for /multimodal-proxy",
+	pi.registerCommand("multimodal-proxy", {
+		description: "Alias for /vision-proxy",
 		handler: commandHandler,
 	});
 }

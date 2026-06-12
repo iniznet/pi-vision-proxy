@@ -396,13 +396,13 @@ export const DEFAULT_CONFIG: VisionConfig = {
 /** Path to the persistent config file stored alongside settings.json */
 export function getPersistentConfigPath(agentDir?: string): string {
 	const base = agentDir ?? join(os.homedir(), ".pi", "agent");
-	return join(base, "multimodal-proxy.json");
+	return join(base, "vision-proxy.json");
 }
 
 /** Old path (pre-rename). Used for migration. */
 function getLegacyPersistentConfigPath(agentDir?: string): string {
 	const base = agentDir ?? join(os.homedir(), ".pi", "agent");
-	return join(base, "vision-proxy.json");
+	return join(base, "multimodal-proxy.json");
 }
 
 const PERSISTED_CONFIG_KEYS = new Set([

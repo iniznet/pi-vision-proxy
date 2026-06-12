@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.7.0] - 2026-06-12
+
+### Changed
+
+- **Command renamed** — `/vision-proxy` is now the canonical command. `/multimodal-proxy` remains as a legacy alias.
+- **Config file renamed** — persistent config now saved as `~/.pi/agent/vision-proxy.json`. Existing `multimodal-proxy.json` configs are automatically migrated.
+- **Package renamed** — npm package is now `pi-vision-proxy` (was `pi-multimodal-proxy`).
+- All `[multimodal-proxy]` notification prefixes changed to `[vision-proxy]`.
+
 ## [1.6.0] - 2026-06-12
 
 ### Removed

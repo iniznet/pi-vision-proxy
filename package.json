@@ -1,6 +1,6 @@
 {
-  "name": "pi-multimodal-proxy",
-  "version": "1.6.0",
+  "name": "pi-vision-proxy",
+  "version": "1.7.0",
   "description": "Automatic image description for any model in Pi. Routes media to a vision model and injects descriptions into context.",
   "keywords": [
     "pi-package"
