@@ -35,6 +35,8 @@ import {
 	DEFAULT_CONFIG,
 	sanitize,
 	hasConsent,
+	resolveConfig,
+	shouldStripImages,
 	CUSTOM_TYPE_CONSENT,
 	type ConsentEntry,
 	type ImageMeta,
@@ -382,5 +384,110 @@ describe("integration: GA config defaults", () => {
 		assert.ok(Object.keys(gm).some((k) => k.includes("deepseek")));
 		assert.ok(Object.keys(gm).some((k) => k.includes("InternVL")));
 		assert.ok(Object.keys(gm).some((k) => k.includes("gemini")));
+	});
+});
+
+// ── Default model ──────────────────────────────────────────────────
+
+describe("integration: default model is Qwen/Qwen3.6-35B", () => {
+	it("DEFAULT_CONFIG uses Qwen/Qwen3.6-35B", () => {
+		assert.equal(DEFAULT_CONFIG.provider, "Qwen");
+		assert.equal(DEFAULT_CONFIG.modelId, "Qwen3.6-35B");
+	});
+
+	it("resolveConfig returns Qwen/Qwen3.6-35B with no overrides", () => {
+		const cfg = resolveConfig([], {});
+		assert.equal(cfg.provider, "Qwen");
+		assert.equal(cfg.modelId, "Qwen3.6-35B");
+	});
+
+	it("autoConsent defaults to false", () => {
+		assert.equal(DEFAULT_CONFIG.autoConsent, false);
+	});
+
+	it("sanitize produces a valid config with autoConsent", () => {
+		const result = sanitize(DEFAULT_CONFIG);
+		assert.equal(result.autoConsent, false);
+		assert.equal(result.provider, "Qwen");
+		assert.equal(result.modelId, "Qwen3.6-35B");
+	});
+});
+
+// ── autoConsent integration ────────────────────────────────────────
+
+describe("integration: autoConsent flow", () => {
+	it("PI_VISION_PROXY_AUTO_CONSENT env override enables auto-consent", () => {
+		const cfg = resolveConfig([], { PI_VISION_PROXY_AUTO_CONSENT: "1" });
+		assert.equal(cfg.autoConsent, true);
+	});
+
+	it("PI_VISION_PROXY_AUTO_CONSENT=false does not enable auto-consent", () => {
+		const cfg = resolveConfig([], { PI_VISION_PROXY_AUTO_CONSENT: "0" });
+		assert.equal(cfg.autoConsent, false);
+	});
+
+	it("autoConsent survives sanitize", () => {
+		const result = sanitize({ ...DEFAULT_CONFIG, autoConsent: true });
+		assert.equal(result.autoConsent, true);
+	});
+
+	it("sanitize defaults autoConsent to false when missing", () => {
+		const partial = { mode: "always" as const, provider: "Qwen", modelId: "Qwen3.6-35B", systemPrompt: "test", includeContext: true };
+		const result = sanitize(partial as VisionConfig);
+		assert.equal(result.autoConsent, false);
+	});
+});
+
+// ── Full config resolution pipeline ──────────────────────────────────
+
+describe("integration: full config resolution pipeline", () => {
+	it("layered resolution: defaults → file → session → env", () => {
+		// File config sets mode=always
+		const fileConfig = { mode: "always" as const, provider: "openai", modelId: "gpt-4o" };
+		// Session entry sets mode=off
+		const entries = [
+			{ type: "custom", customType: "vision-proxy-config", data: { mode: "off" } },
+		];
+		// Env sets mode=fallback
+		const cfg = resolveConfig(entries, { PI_VISION_PROXY_MODE: "fallback" }, fileConfig);
+		// Env wins
+		assert.equal(cfg.mode, "fallback");
+		// Session entry's provider is ignored because mode env override only affects mode
+		assert.equal(cfg.provider, "openai"); // from file
+		assert.equal(cfg.modelId, "gpt-4o"); // from file
+	});
+
+	it("missing file fields are filled from defaults", () => {
+		const fileConfig = { mode: "always" as const };
+		const cfg = resolveConfig([], {}, fileConfig);
+		assert.equal(cfg.mode, "always");
+		assert.equal(cfg.provider, DEFAULT_CONFIG.provider);
+		assert.equal(cfg.modelId, DEFAULT_CONFIG.modelId);
+		assert.equal(cfg.autoConsent, false);
+		assert.equal(cfg.tool, "on");
+	});
+
+	it("all env overrides work together", () => {
+		const cfg = resolveConfig([], {
+			PI_VISION_PROXY_MODE: "always",
+			PI_VISION_PROXY_MODEL: "Qwen/Qwen3.6-35B",
+			PI_VISION_PROXY_TOOL: "off",
+			PI_VISION_PROXY_AUTO_CONSENT: "1",
+		});
+		assert.equal(cfg.mode, "always");
+		assert.equal(cfg.provider, "Qwen");
+		assert.equal(cfg.modelId, "Qwen3.6-35B");
+		assert.equal(cfg.tool, "off");
+		assert.equal(cfg.autoConsent, true);
+	});
+
+	it("shouldStripImages respects all modes", () => {
+		assert.equal(shouldStripImages({ ...DEFAULT_CONFIG, mode: "off" }, ["image"]), false);
+		assert.equal(shouldStripImages({ ...DEFAULT_CONFIG, mode: "off" }, undefined), false);
+		assert.equal(shouldStripImages({ ...DEFAULT_CONFIG, mode: "always" }, ["image"]), true);
+		assert.equal(shouldStripImages({ ...DEFAULT_CONFIG, mode: "always" }, undefined), true);
+		assert.equal(shouldStripImages({ ...DEFAULT_CONFIG, mode: "fallback" }, ["image"]), false);
+		assert.equal(shouldStripImages({ ...DEFAULT_CONFIG, mode: "fallback" }, ["text"]), true);
+		assert.equal(shouldStripImages({ ...DEFAULT_CONFIG, mode: "fallback" }, undefined), true);
 	});
 });

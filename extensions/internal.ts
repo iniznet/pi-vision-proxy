@@ -358,8 +358,8 @@ export const MODEL_ID_PATTERN = /^[a-zA-Z0-9_./:-]+$/;
 
 export const DEFAULT_CONFIG: VisionConfig = {
 	mode: "fallback",
-	provider: "anthropic",
-	modelId: "claude-sonnet-4-5",
+	provider: "Qwen",
+	modelId: "Qwen3.6-35B",
 	systemPrompt: [
 		"You are a precise image analysis assistant.",
 		"Describe the image factually for a downstream agent that may act on the description.",

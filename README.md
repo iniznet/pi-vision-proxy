@@ -67,7 +67,7 @@ Legacy alias: /vision-proxy <args> works identically.
 | Variable | Values | Default |
 |----------|--------|---------|
 | `PI_VISION_PROXY_MODE` | `fallback`, `always`, `off` | `fallback` |
-| `PI_VISION_PROXY_MODEL` | `provider/model-id` | `anthropic/claude-sonnet-4-5` |
+| `PI_VISION_PROXY_MODEL` | `provider/model-id` | `Qwen/Qwen3.6-35B` |
 | `PI_VISION_PROXY_INCLUDE_CONTEXT` | bool | `true` |
 | `PI_VISION_PROXY_TOOL` | `on`, `off` | `on` |
 | `PI_VISION_PROXY_MAX_IMAGES_PER_CALL` | 1–20 | `10` |
@@ -138,7 +138,7 @@ When a model is in the grounding registry, a format-specific instruction is appe
 
 ## Privacy & security
 
-This extension **sends data to a third-party provider**. By default that is `anthropic/claude-sonnet-4-5` for images. Be aware:
+This extension **sends data to a third-party provider**. By default that is `Qwen/Qwen3.6-35B` for images. Be aware:
 
 1. **Image data is uploaded** to the configured provider on every proxied request. Crop coordinates are applied locally before upload — only the cropped region is sent.
 2. **Recent conversation context** (last 8 messages, truncated) is uploaded with the image unless you set `/vision-proxy context off` or `PI_VISION_PROXY_INCLUDE_CONTEXT=false`. Disable it for sensitive sessions.

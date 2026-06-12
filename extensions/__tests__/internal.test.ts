@@ -1134,6 +1134,16 @@ describe("readEnvOverrides (1.4.0 fields)", () => {
 		assert.equal(readEnvOverrides({ PI_VISION_PROXY_PHASH_THRESHOLD: "0.9" }).pHashSimilarityThreshold, 0.9);
 		assert.equal(readEnvOverrides({ PI_VISION_PROXY_PHASH_THRESHOLD: "1.5" }).pHashSimilarityThreshold, undefined);
 	});
+
+	it("reads PI_VISION_PROXY_AUTO_CONSENT", () => {
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_AUTO_CONSENT: "1" }).autoConsent, true);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_AUTO_CONSENT: "true" }).autoConsent, true);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_AUTO_CONSENT: "yes" }).autoConsent, true);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_AUTO_CONSENT: "on" }).autoConsent, true);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_AUTO_CONSENT: "0" }).autoConsent, undefined);
+		assert.equal(readEnvOverrides({ PI_VISION_PROXY_AUTO_CONSENT: "false" }).autoConsent, undefined);
+		assert.equal(readEnvOverrides({}).autoConsent, undefined);
+	});
 });
 
 describe("sanitize (1.4.0 fields)", () => {
@@ -1158,6 +1168,21 @@ describe("sanitize (1.4.0 fields)", () => {
 		assert.equal(bad.maxImagesPerCall, 10); // reset to default
 		const good = sanitize({ ...DEFAULT_CONFIG, maxImagesPerCall: 15 });
 		assert.equal(good.maxImagesPerCall, 15);
+	});
+
+	it("defaults autoConsent to false", () => {
+		const result = sanitize({} as VisionConfig);
+		assert.equal(result.autoConsent, false);
+	});
+
+	it("preserves autoConsent when set", () => {
+		const result = sanitize({ ...DEFAULT_CONFIG, autoConsent: true });
+		assert.equal(result.autoConsent, true);
+	});
+
+	it("defaults autoConsent to false for non-boolean", () => {
+		const result = sanitize({ ...DEFAULT_CONFIG, autoConsent: "yes" as any });
+		assert.equal(result.autoConsent, false);
 	});
 });
 

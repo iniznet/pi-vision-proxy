@@ -1194,7 +1194,7 @@ export default function (pi: ExtensionAPI) {
 				const parsed = parseModelString(value);
 				if (!parsed) {
 					ctx.ui.notify(
-						"Usage: /vision-proxy model provider/model-id\nExample: /vision-proxy model anthropic/claude-sonnet-4-5",
+						"Usage: /vision-proxy model provider/model-id\nExample: /vision-proxy model Qwen/Qwen3.6-35B",
 						"warning",
 					);
 					return;
