@@ -43,7 +43,7 @@ export interface VisionConfig {
 	cacheSize: number;
 	pHashSimilarityThreshold: number;
 	groundingModels: Record<string, GroundingModelEntry>;
-
+	autoConsent: boolean;
 }
 
 export interface ImageMeta {
@@ -374,6 +374,7 @@ export const DEFAULT_CONFIG: VisionConfig = {
 	maxBatch: 4,
 	cacheSize: 50,
 	pHashSimilarityThreshold: 0.80,
+	autoConsent: false,
 	groundingModels: {
 		"Qwen/Qwen2.5-VL-3B-Instruct": { format: "qwen_pixels" },
 		"Qwen/Qwen2.5-VL-7B-Instruct": { format: "qwen_pixels" },
@@ -408,7 +409,7 @@ function getLegacyPersistentConfigPath(agentDir?: string): string {
 const PERSISTED_CONFIG_KEYS = new Set([
 	"mode", "provider", "modelId", "systemPrompt", "includeContext",
 	"tool", "maxImagesPerCall", "maxBatch", "cacheSize",
-	"pHashSimilarityThreshold", "groundingModels",
+	"pHashSimilarityThreshold", "groundingModels", "autoConsent",
 ]);
 
 /** Read config from the persistent file. Returns empty object on any failure. */
@@ -500,10 +501,14 @@ export function readEnvOverrides(env: NodeJS.ProcessEnv = process.env): Partial<
 		const n = parseFloat(phashEnv);
 		if (Number.isFinite(n) && n >= 0 && n <= 1) overrides.pHashSimilarityThreshold = n;
 	}
+	const autoConsentEnv = env.PI_VISION_PROXY_AUTO_CONSENT;
+	if (autoConsentEnv === "1" || autoConsentEnv === "true" || autoConsentEnv === "yes" || autoConsentEnv === "on") {
+		overrides.autoConsent = true;
+	}
 	return overrides;
 }
 
-export function envFlags(env: NodeJS.ProcessEnv = process.env): { mode: boolean; model: boolean; context: boolean; tool: boolean; maxImagesPerCall: boolean; maxBatch: boolean; cacheSize: boolean } {
+export function envFlags(env: NodeJS.ProcessEnv = process.env): { mode: boolean; model: boolean; context: boolean; tool: boolean; maxImagesPerCall: boolean; maxBatch: boolean; cacheSize: boolean; autoConsent: boolean } {
 	return {
 		mode: Boolean(env.PI_VISION_PROXY_MODE),
 		model: Boolean(env.PI_VISION_PROXY_MODEL),
@@ -512,6 +517,7 @@ export function envFlags(env: NodeJS.ProcessEnv = process.env): { mode: boolean;
 		maxImagesPerCall: env.PI_VISION_PROXY_MAX_IMAGES_PER_CALL !== undefined,
 		maxBatch: env.PI_VISION_PROXY_MAX_BATCH !== undefined,
 		cacheSize: env.PI_VISION_PROXY_CACHE_SIZE !== undefined,
+		autoConsent: env.PI_VISION_PROXY_AUTO_CONSENT !== undefined,
 	};
 }
 
@@ -571,6 +577,7 @@ export function sanitize(config: VisionConfig): VisionConfig {
 		}
 		safe.groundingModels = validated;
 	}
+	if (typeof safe.autoConsent !== "boolean") safe.autoConsent = DEFAULT_CONFIG.autoConsent;
 	return safe;
 }
 

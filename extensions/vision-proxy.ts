@@ -13,7 +13,7 @@
  *                 /vision-proxy model provider/model-id
 
  *                 /vision-proxy context on|off  - include conversation context in proxy prompt
- *                 /vision-proxy consent yes|no  - first-use data-egress consent
+ *                 /vision-proxy consent yes|no|auto|session|auto|session  - first-use data-egress consent (auto=always grant)
  *                 /vision-proxy tool on|off     - enable/disable analyze_image tool
  *                 /vision-proxy max-images-per-call <n>
  *                 /vision-proxy max-batch <n>
@@ -29,6 +29,7 @@
  *     PI_VISION_PROXY_MAX_IMAGES_PER_CALL - 1..20
  *     PI_VISION_PROXY_MAX_BATCH        - 1..10
  *     PI_VISION_PROXY_CACHE_SIZE       - 0..500
+ *     PI_VISION_PROXY_AUTO_CONSENT     - "1"|"true"|"yes"|"on" to auto-grant consent
 
  *
  * Install:
@@ -395,6 +396,13 @@ async function ensureConsent(
 	pi: ExtensionAPI,
 ): Promise<boolean> {
 	if (hasConsent(entries, config.provider)) return true;
+
+	// Auto-consent: skip confirmation dialog and grant automatically
+	if (config.autoConsent) {
+		pi.appendEntry<ConsentEntry>(CUSTOM_TYPE_CONSENT, { granted: true, provider: config.provider });
+		return true;
+	}
+
 	const message =
 		`Send image data${config.includeContext ? " and recent conversation context" : ""} ` +
 		`to ${modelLabel(config)}? (one-time consent for this session)`;
@@ -1198,6 +1206,30 @@ export default function (pi: ExtensionAPI) {
 
 			// ── Consent ─────────────────────────────────────────
 			if (sub === "consent") {
+				if (valueLower === "auto") {
+					if (env.autoConsent) {
+						ctx.ui.notify(
+							"[vision-proxy] PI_VISION_PROXY_AUTO_CONSENT is set - env overrides commands. Unset to change.",
+							"warning",
+						);
+						return;
+					}
+					const next = writePersisted({ ...persisted, autoConsent: true });
+					ctx.ui.notify(`[vision-proxy] Auto-consent: ON (consent will be granted automatically for ${next.provider})`, "info");
+					return;
+				}
+				if (valueLower === "session") {
+					if (env.autoConsent) {
+						ctx.ui.notify(
+							"[vision-proxy] PI_VISION_PROXY_AUTO_CONSENT is set - env overrides commands. Unset to change.",
+							"warning",
+						);
+						return;
+					}
+					writePersisted({ ...persisted, autoConsent: false });
+					ctx.ui.notify("[vision-proxy] Auto-consent: OFF (consent required per session)", "info");
+					return;
+				}
 				if (isTrue(valueLower)) {
 					pi.appendEntry<ConsentEntry>(CUSTOM_TYPE_CONSENT, { granted: true, provider: effective.provider });
 					ctx.ui.notify("[vision-proxy] Consent granted.", "info");
@@ -1211,7 +1243,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(
 					`[vision-proxy] Consent: ${
 						hasConsent(entries, effective.provider) ? "granted" : "not granted"
-					}. Use /vision-proxy consent yes|no.`,
+					}. Auto-consent: ${effective.autoConsent ? "ON" : "OFF"}. Use /vision-proxy consent yes|no|auto|session|auto|session.`,
 					"info",
 				);
 				return;
@@ -1667,9 +1699,9 @@ export default function (pi: ExtensionAPI) {
 				`Max images/call: ${effective.maxImagesPerCall}\n` +
 				`Max batch: ${effective.maxBatch}\n` +
 				`Cache size: ${effective.cacheSize}\n` +
-				`Consent: ${hasConsent(entries, effective.provider) ? "granted" : "not granted"}\n` +
+				`Consent: ${hasConsent(entries, effective.provider) ? "granted" : "not granted"} (auto: ${effective.autoConsent ? "ON" : "OFF"})\n` +
 				(env.mode || env.model || env.context
-					? `Env overrides: ${[env.mode && "mode", env.model && "model", env.context && "context", env.tool && "tool", env.maxImagesPerCall && "maxImagesPerCall", env.maxBatch && "maxBatch", env.cacheSize && "cacheSize"]
+					? `Env overrides: ${[env.mode && "mode", env.model && "model", env.context && "context", env.tool && "tool", env.maxImagesPerCall && "maxImagesPerCall", env.maxBatch && "maxBatch", env.autoConsent && "autoConsent", env.cacheSize && "cacheSize"]
 							.filter(Boolean)
 							.join(", ")}\n`
 					: "");
@@ -1677,7 +1709,7 @@ export default function (pi: ExtensionAPI) {
 			if (!ctx.hasUI) {
 				ctx.ui.notify(
 					summary +
-						`\nCommands: /vision-proxy fallback|always|off | pick | model provider/model-id | context on|off | consent yes|no | tool on|off | max-images-per-call <n> | max-batch <n> | cache-size <n>`,
+						`\nCommands: /vision-proxy fallback|always|off | pick | model provider/model-id | context on|off | consent yes|no|auto|session | tool on|off | max-images-per-call <n> | max-batch <n> | cache-size <n>`,
 					"info",
 				);
 				return;
@@ -1691,7 +1723,7 @@ export default function (pi: ExtensionAPI) {
 				`Max images/call: ${effective.maxImagesPerCall}`,
 				`Max batch: ${effective.maxBatch}`,
 				`Cache size: ${effective.cacheSize}`,
-				`Consent: ${hasConsent(entries, effective.provider) ? "granted" : "not granted"}`,
+				`Consent: ${hasConsent(entries, effective.provider) ? "granted" : "not granted"} (auto: ${effective.autoConsent ? "ON" : "OFF"})`,
 			]);
 
 			if (!choice) return;

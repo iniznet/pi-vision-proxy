@@ -1,6 +1,6 @@
 {
   "name": "pi-vision-proxy",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Automatic image description for any model in Pi. Routes media to a vision model and injects descriptions into context.",
   "keywords": [
     "pi-package"

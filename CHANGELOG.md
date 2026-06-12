@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.0] - 2026-06-12
+
+### Added
+
+- **`autoConsent` config option** — skip the first-use data-egress consent dialog by default. Enable with `/vision-proxy consent auto` or `PI_VISION_PROXY_AUTO_CONSENT=1`. Revert with `/vision-proxy consent session`. Persists across sessions in the config file.
+
 ## [1.7.0] - 2026-06-12
 
 ### Changed
